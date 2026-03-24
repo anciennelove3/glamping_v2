@@ -866,7 +866,7 @@ async def on_contact(message: Message, state: FSMContext):
 
 
 @dp.callback_query(F.data.startswith("cancel:"))
-async def cancel_booking(callback: CallbackQuery):
+async def cancel_booking(callback: CallbackQuery, state: FSMContext):
     booking_id = int(callback.data.split(":")[1])
 
     try:
@@ -881,6 +881,10 @@ async def cancel_booking(callback: CallbackQuery):
         await callback.answer("Не удалось отменить бронь", show_alert=True)
         await callback.message.answer(f"Ошибка отмены:\n{e}")
         return
+
+    state_data = await state.get_data()
+    if state_data.get("receipt_booking_id") == booking_id:
+        await state.update_data(receipt_booking_id=None)
 
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
@@ -901,7 +905,7 @@ async def cancel_booking(callback: CallbackQuery):
 
 
 @dp.callback_query(F.data.startswith("paid:"))
-async def paid_click(callback: CallbackQuery):
+async def paid_click(callback: CallbackQuery, state: FSMContext):
     booking_id = int(callback.data.split(":")[1])
 
     try:
@@ -916,6 +920,8 @@ async def paid_click(callback: CallbackQuery):
         await callback.answer("Не удалось отметить оплату", show_alert=True)
         await callback.message.answer(f"Ошибка:\n{e}")
         return
+
+    await state.update_data(receipt_booking_id=booking_id)
 
     item = await get_booking_item_for_user(callback.from_user.id, booking_id)
 
@@ -966,14 +972,24 @@ async def find_receipt_target(tg_user_id: int, preferred_booking_id: int | None 
 
 
 @dp.message(F.photo)
-async def on_receipt_photo(message: Message):
+async def on_receipt_photo(message: Message, state: FSMContext):
+    state_data = await state.get_data()
+    preferred_booking_id = state_data.get("receipt_booking_id")
+
     try:
-        target = await find_receipt_target(message.from_user.id)
+        target = await find_receipt_target(message.from_user.id, preferred_booking_id)
     except Exception as e:
         await message.answer(f"Не удалось проверить брони:\n{e}", reply_markup=main_kb())
         return
 
     if not target:
+        if preferred_booking_id is not None:
+            await state.update_data(receipt_booking_id=None)
+            await message.answer(
+                "Не удалось определить бронь, к которой нужно прикрепить чек.\n"
+                "Откройте «📅 Мои брони» и нажмите «✅ Я оплатил(а)» у нужной брони ещё раз.",
+                reply_markup=main_kb(),
+            )
         return
 
     try:
@@ -987,6 +1003,8 @@ async def on_receipt_photo(message: Message):
     except Exception as e:
         await message.answer(f"Не удалось прикрепить чек:\n{e}", reply_markup=main_kb())
         return
+
+    await state.update_data(receipt_booking_id=None)
 
     await notify_admin_receipt(
         guest_tg_user_id=message.from_user.id,
@@ -1008,14 +1026,24 @@ async def on_receipt_photo(message: Message):
 
 
 @dp.message(F.document)
-async def on_receipt_document(message: Message):
+async def on_receipt_document(message: Message, state: FSMContext):
+    state_data = await state.get_data()
+    preferred_booking_id = state_data.get("receipt_booking_id")
+
     try:
-        target = await find_receipt_target(message.from_user.id)
+        target = await find_receipt_target(message.from_user.id, preferred_booking_id)
     except Exception as e:
         await message.answer(f"Не удалось проверить брони:\n{e}", reply_markup=main_kb())
         return
 
     if not target:
+        if preferred_booking_id is not None:
+            await state.update_data(receipt_booking_id=None)
+            await message.answer(
+                "Не удалось определить бронь, к которой нужно прикрепить чек.\n"
+                "Откройте «📅 Мои брони» и нажмите «✅ Я оплатил(а)» у нужной брони ещё раз.",
+                reply_markup=main_kb(),
+            )
         return
 
     try:
@@ -1029,6 +1057,8 @@ async def on_receipt_document(message: Message):
     except Exception as e:
         await message.answer(f"Не удалось прикрепить чек:\n{e}", reply_markup=main_kb())
         return
+
+    await state.update_data(receipt_booking_id=None)
 
     await notify_admin_receipt(
         guest_tg_user_id=message.from_user.id,
