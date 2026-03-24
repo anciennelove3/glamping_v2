@@ -55,6 +55,9 @@ from .schemas import (
     TariffOut,
     UnitOut,
     UserBookingActionRequest,
+    UnavailableDateRangeItem,
+    UnavailableDatesRequest,
+    UnavailableDatesResponse,
 )
 from .seed import seed_if_needed
 
@@ -477,6 +480,75 @@ async def calculate_booking(req: CalculateBookingRequest):
             ),
             breakdown=calc["breakdown"],
         )
+
+@app.post("/api/v2/bookings/unavailable", response_model=UnavailableDatesResponse)
+async def bookings_unavailable(req: UnavailableDatesRequest):
+    now_dt = now_utc()
+    today = today_local_date()
+
+    if req.date_to <= req.date_from:
+        raise HTTPException(status_code=400, detail="date_to must be after date_from")
+
+    async with SessionLocal() as session:
+        ru = await session.execute(
+            select(Unit).where(Unit.id == req.unit_id, Unit.active.is_(True))
+        )
+        unit = ru.scalar_one_or_none()
+        if not unit:
+            raise HTTPException(status_code=400, detail="Unknown unit_id")
+
+        q = await session.execute(
+            select(Booking.check_in, Booking.check_out)
+            .where(
+                Booking.unit_id == req.unit_id,
+                Booking.check_in < req.date_to,
+                Booking.check_out > req.date_from,
+                active_booking_condition(now_dt, today),
+            )
+            .order_by(Booking.check_in.asc(), Booking.check_out.asc())
+        )
+
+        raw_ranges = [
+            {"check_in": check_in, "check_out": check_out}
+            for check_in, check_out in q.all()
+        ]
+
+        if not raw_ranges:
+            return UnavailableDatesResponse(
+                unit_id=req.unit_id,
+                date_from=req.date_from.isoformat(),
+                date_to=req.date_to.isoformat(),
+                items=[],
+            )
+
+        merged: list[dict] = []
+        current = raw_ranges[0].copy()
+
+        for item in raw_ranges[1:]:
+            # Пересечение или стык диапазонов:
+            # [25, 28) и [28, 30) можно слить в [25, 30)
+            if item["check_in"] <= current["check_out"]:
+                if item["check_out"] > current["check_out"]:
+                    current["check_out"] = item["check_out"]
+            else:
+                merged.append(current)
+                current = item.copy()
+
+        merged.append(current)
+
+        return UnavailableDatesResponse(
+            unit_id=req.unit_id,
+            date_from=req.date_from.isoformat(),
+            date_to=req.date_to.isoformat(),
+            items=[
+                UnavailableDateRangeItem(
+                    check_in=item["check_in"].isoformat(),
+                    check_out=item["check_out"].isoformat(),
+                )
+                for item in merged
+            ],
+        )
+
 
 
 @app.post("/api/v2/bookings/create", response_model=CreateBookingResponse)

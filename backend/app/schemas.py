@@ -115,14 +115,9 @@ class ActiveBookingsRequest(BaseModel):
     tg_user_id: int = Field(..., ge=1)
 
 
-class AdminBookingItem(BaseModel):
+class ActiveBookingItem(BaseModel):
     booking_id: int
     status: str
-
-    tg_user_id: int
-    phone: str
-    telegram_name: str | None = None
-    telegram_username: str | None = None
 
     unit_id: int
     unit_title: str
@@ -142,23 +137,13 @@ class AdminBookingItem(BaseModel):
     total_amount: int
     prepay_amount: int
 
-    created_at: str
-    paid_clicked_at: str | None = None
-    receipt_received_at: str | None = None
-    confirmed_at: str | None = None
-    cancelled_at: str | None = None
-    expired_at: str | None = None
-
-    expires_at: str | None = None
-    receipt_attached: bool = False
-
-    can_confirm: bool
-    can_reject: bool
+    expires_at: str | None
+    can_cancel: bool
+    cancel_reason: str | None = None
 
 
-class AdminBookingsListResponse(BaseModel):
-    items: list[AdminBookingItem]
-    count: int
+class ActiveBookingsResponse(BaseModel):
+    items: list[ActiveBookingItem]
 
 
 class CancelBookingRequest(BaseModel):
@@ -222,12 +207,16 @@ class AdminBookingItem(BaseModel):
     cancelled_at: str | None = None
     expired_at: str | None = None
 
+    expires_at: str | None = None
+    receipt_attached: bool = False
+
     can_confirm: bool
     can_reject: bool
 
 
 class AdminBookingsListResponse(BaseModel):
     items: list[AdminBookingItem]
+    count: int
 
 
 class BookingActionResponse(BaseModel):
@@ -241,3 +230,20 @@ class ReaperRunResponse(BaseModel):
     expired_awaiting_payment: int
     expired_awaiting_receipt: int
     expired_pending_review: int
+
+class UnavailableDateRangeItem(BaseModel):
+    check_in: str
+    check_out: str
+
+
+class UnavailableDatesRequest(BaseModel):
+    unit_id: int = Field(..., ge=1)
+    date_from: date
+    date_to: date
+
+
+class UnavailableDatesResponse(BaseModel):
+    unit_id: int
+    date_from: str
+    date_to: str
+    items: list[UnavailableDateRangeItem]    
