@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Бронирование — Тишь да Гладь</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #111827;
+      --muted: #94a3b8;
+      --text: #f8fafc;
+      --line: #1f2937;
+      --accent: #22c55e;
+      --danger: #ef4444;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0b1220;
+      color: var(--text);
+    }
+
+    .wrap {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    h1 {
+      margin: 0 0 16px;
+      font-size: 28px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      display: block;
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    select, input, button {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      padding: 12px;
+      font-size: 16px;
+    }
+
+    select, input {
+      background: #0b1220;
+      color: var(--text);
+    }
+
+    button {
+      background: var(--accent);
+      color: #062b14;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+    }
+
+    button.secondary {
+      background: #1f2937;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .units {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .unit {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      background: #0b1220;
+      cursor: pointer;
+    }
+
+    .unit.active {
+      outline: 2px solid var(--accent);
+    }
+
+    .unit img {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      display: block;
+      background: #111827;
+    }
+
+    .unit-body {
+      padding: 12px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .error {
+      color: #fecaca;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      padding: 12px;
+      border-radius: 12px;
+      display: none;
+      margin-bottom: 12px;
+    }
+
+    .summary {
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    .summary strong {
+      color: #fff;
+    }
+
+    @media (max-width: 700px) {
+      .grid,
+      .units {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Бронирование</h1>
+
+    <div id="errorBox" class="error"></div>
+
+    <div class="card">
+      <h2 style="margin-top:0">1. Выберите домик</h2>
+      <div id="unitsBox" class="units"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">2. Параметры бронирования</h2>
+
+      <div class="grid">
+        <div class="full">
+          <label for="tariff">Тариф</label>
+          <select id="tariff"></select>
+        </div>
+
+        <div>
+          <label for="adults">Взрослые</label>
+          <select id="adults"></select>
+        </div>
+
+        <div>
+          <label for="children">Дети</label>
+          <select id="children"></select>
+        </div>
+
+        <div>
+          <label for="extraBed">Доп. места для детей</label>
+          <select id="extraBed"></select>
+        </div>
+
+        <div>
+          <label for="checkIn">Заезд</label>
+          <input id="checkIn" type="date">
+        </div>
+
+        <div>
+          <label for="checkOut">Выезд</label>
+          <input id="checkOut" type="date">
+        </div>
+      </div>
+
+      <div style="display:flex; gap:12px; margin-top:16px;">
+        <button id="calcBtn">Рассчитать стоимость</button>
+        <button id="sendBtn" class="secondary" disabled>Продолжить в Telegram</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">3. Итог</h2>
+      <div id="summary" class="summary">Заполните параметры и нажмите «Рассчитать стоимость».</div>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+    }
+
+    const $ = (id) => document.getElementById(id);
+
+    let units = [];
+    let tariffs = [];
+    let selectedUnitId = null;
+    let lastCalculation = null;
+
+    function showError(message = "") {
+      const box = $("errorBox");
+      if (!message) {
+        box.style.display = "none";
+        box.textContent = "";
+        return;
+      }
+      box.style.display = "block";
+      box.textContent = message;
+    }
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, options);
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { detail: text };
+      }
+      if (!res.ok) {
+        throw new Error(data.detail || text || `HTTP ${res.status}`);
+      }
+      return data;
+    }
+
+    function fillSelect(el, values, selected = null) {
+      el.innerHTML = "";
+      values.forEach((v) => {
+        const opt = document.createElement("option");
+        opt.value = String(v.value);
+        opt.textContent = v.label;
+        el.appendChild(opt);
+      });
+      if (selected != null) el.value = String(selected);
+    }
+
+    function todayLocalISO() {
+      const dt = new Date();
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, "0");
+      const d = String(dt.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function addDays(isoDate, days) {
+      const dt = new Date(isoDate + "T00:00:00");
+      dt.setDate(dt.getDate() + days);
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, "0");
+      const d = String(dt.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function getSelectedUnit() {
+      return units.find(u => u.id === selectedUnitId) || null;
+    }
+
+    function renderUnits() {
+      const box = $("unitsBox");
+      box.innerHTML = "";
+
+      units.forEach((unit) => {
+        const div = document.createElement("div");
+        div.className = "unit" + (unit.id === selectedUnitId ? " active" : "");
+        div.innerHTML = `
+          <img src="https://placehold.co/800x500?text=${encodeURIComponent(unit.title)}" alt="${unit.title}">
+          <div class="unit-body">
+            <h3 style="margin:0 0 8px">${unit.title}</h3>
+            <div class="muted">${unit.short_description || ""}</div>
+            <div style="margin-top:10px" class="muted">
+              Макс. гостей: ${unit.max_total_guests} • Взрослых: до ${unit.max_adults} • Детей: до ${unit.max_children}
+            </div>
+          </div>
+        `;
+        div.addEventListener("click", () => {
+          selectedUnitId = unit.id;
+          renderUnits();
+          updateGuestControls();
+          lastCalculation = null;
+          $("sendBtn").disabled = true;
+          $("summary").textContent = "Домик выбран. Теперь можно рассчитать стоимость.";
+        });
+        box.appendChild(div);
+      });
+    }
+
+    function updateGuestControls() {
+      const unit = getSelectedUnit();
+      if (!unit) return;
+
+      const adultsValues = [];
+      for (let i = 1; i <= unit.max_adults; i++) {
+        adultsValues.push({ value: i, label: String(i) });
+      }
+      fillSelect($("adults"), adultsValues, adultsValues[0]?.value || 1);
+
+      const childrenValues = [];
+      for (let i = 0; i <= unit.max_children; i++) {
+        childrenValues.push({ value: i, label: String(i) });
+      }
+      fillSelect($("children"), childrenValues, 0);
+
+      updateExtraBedControls();
+    }
+
+    function updateExtraBedControls() {
+      const children = Number($("children").value || 0);
+      const values = [];
+      for (let i = 0; i <= children; i++) {
+        values.push({ value: i, label: String(i) });
+      }
+      fillSelect($("extraBed"), values, 0);
+    }
+
+    function selectedTariffTitle() {
+      const tariffId = Number($("tariff").value);
+      const tariff = tariffs.find(t => t.id === tariffId);
+      return tariff?.title || "";
+    }
+
+    async function loadInitialData() {
+      showError("");
+      units = await api("/api/v2/units");
+      tariffs = await api("/api/v2/tariffs");
+
+      if (!units.length) throw new Error("Нет доступных домиков.");
+      if (!tariffs.length) throw new Error("Нет доступных тарифов.");
+
+      selectedUnitId = units[0].id;
+      renderUnits();
+
+      fillSelect(
+        $("tariff"),
+        tariffs.map(t => ({ value: t.id, label: t.title })),
+        tariffs[0].id
+      );
+
+      updateGuestControls();
+
+      const tomorrow = addDays(todayLocalISO(), 1);
+      const dayAfter = addDays(todayLocalISO(), 2);
+      $("checkIn").value = tomorrow;
+      $("checkOut").value = dayAfter;
+      $("checkIn").min = tomorrow;
+      $("checkOut").min = dayAfter;
+    }
+
+    function buildPayload() {
+      if (!selectedUnitId) throw new Error("Сначала выберите домик.");
+
+      return {
+        unit_id: selectedUnitId,
+        tariff_id: Number($("tariff").value),
+        adults: Number($("adults").value),
+        children: Number($("children").value),
+        extra_bed_count: Number($("extraBed").value),
+        check_in: $("checkIn").value,
+        check_out: $("checkOut").value,
+      };
+    }
+
+    function renderSummary(data) {
+      $("summary").innerHTML = `
+        <div><strong>Домик:</strong> ${data.unit_title}</div>
+        <div><strong>Тариф:</strong> ${data.tariff_title}</div>
+        <div><strong>Взрослые:</strong> ${data.adults}</div>
+        <div><strong>Дети:</strong> ${data.children}</div>
+        <div><strong>Доп. места:</strong> ${data.extra_bed_count} (${data.extra_bed_amount} ₽)</div>
+        <div><strong>Заезд:</strong> ${data.check_in}</div>
+        <div><strong>Выезд:</strong> ${data.check_out}</div>
+        <div><strong>Ночей:</strong> ${data.nights}</div>
+        <div><strong>Стоимость проживания:</strong> ${data.subtotal_amount} ₽</div>
+        <div><strong>Итого:</strong> ${data.total_amount} ₽</div>
+        <div><strong>Предоплата:</strong> ${data.prepay_amount} ₽</div>
+        <div><strong>Реквизиты сегодня:</strong> ${data.payment_profile.title}</div>
+      `;
+    }
+
+    $("children").addEventListener("change", () => {
+      updateExtraBedControls();
+      $("sendBtn").disabled = true;
+      lastCalculation = null;
+    });
+
+    $("calcBtn").addEventListener("click", async () => {
+      try {
+        showError("");
+        lastCalculation = null;
+        $("sendBtn").disabled = true;
+
+        const payload = buildPayload();
+        const data = await api("/api/v2/bookings/calculate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        lastCalculation = data;
+        renderSummary(data);
+        $("sendBtn").disabled = false;
+      } catch (e) {
+        showError(e.message || "Не удалось рассчитать стоимость.");
+      }
+    });
+
+    $("sendBtn").addEventListener("click", () => {
+      if (!lastCalculation) return;
+
+      const payload = {
+        type: "booking_calculated",
+        data: {
+          unit_id: lastCalculation.unit_id,
+          tariff_id: lastCalculation.tariff_id,
+          adults: lastCalculation.adults,
+          children: lastCalculation.children,
+          extra_bed_count: lastCalculation.extra_bed_count,
+          check_in: lastCalculation.check_in,
+          check_out: lastCalculation.check_out,
+          total_amount: lastCalculation.total_amount,
+          prepay_amount: lastCalculation.prepay_amount,
+          unit_title: lastCalculation.unit_title,
+          tariff_title: lastCalculation.tariff_title,
+        }
+      };
+
+      if (tg && tg.sendData) {
+        tg.sendData(JSON.stringify(payload));
+        return;
+      }
+
+      showError("Эту страницу нужно открывать из Telegram.");
+    });
+
+    loadInitialData().catch((e) => showError(e.message || "Ошибка загрузки данных."));
+  </script>
+</body>
+</html>
