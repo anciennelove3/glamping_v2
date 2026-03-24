@@ -5,6 +5,11 @@
   <title>Бронирование — Тишь да Гладь</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://npmcdn.com/flatpickr/dist/l10n/ru.js"></script>
+
   <style>
     :root {
       --bg: #0f172a;
@@ -34,6 +39,10 @@
     h1 {
       margin: 0 0 16px;
       font-size: 28px;
+    }
+
+    h2 {
+      margin-top: 0;
     }
 
     .card {
@@ -136,6 +145,7 @@
       border-radius: 12px;
       display: none;
       margin-bottom: 12px;
+      white-space: pre-line;
     }
 
     .summary {
@@ -145,6 +155,51 @@
 
     .summary strong {
       color: #fff;
+    }
+
+    .loading-note {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .flatpickr-calendar {
+      background: #0b1220;
+      border: 1px solid var(--line);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+
+    .flatpickr-months .flatpickr-month,
+    .flatpickr-current-month input.cur-year,
+    .flatpickr-current-month .flatpickr-monthDropdown-months,
+    span.flatpickr-weekday,
+    .flatpickr-day,
+    .numInputWrapper span.arrowUp:after,
+    .numInputWrapper span.arrowDown:after {
+      color: #f8fafc;
+    }
+
+    .flatpickr-months .flatpickr-prev-month svg,
+    .flatpickr-months .flatpickr-next-month svg {
+      fill: #f8fafc;
+    }
+
+    .flatpickr-day {
+      border-radius: 10px;
+    }
+
+    .flatpickr-day.selected,
+    .flatpickr-day.startRange,
+    .flatpickr-day.endRange {
+      background: #22c55e;
+      border-color: #22c55e;
+      color: #062b14;
+    }
+
+    .flatpickr-day.disabled,
+    .flatpickr-day.flatpickr-disabled {
+      color: #475569 !important;
+      cursor: not-allowed;
     }
 
     @media (max-width: 700px) {
@@ -162,12 +217,12 @@
     <div id="errorBox" class="error"></div>
 
     <div class="card">
-      <h2 style="margin-top:0">1. Выберите домик</h2>
+      <h2>1. Выберите домик</h2>
       <div id="unitsBox" class="units"></div>
     </div>
 
     <div class="card">
-      <h2 style="margin-top:0">2. Параметры бронирования</h2>
+      <h2>2. Параметры бронирования</h2>
 
       <div class="grid">
         <div class="full">
@@ -192,14 +247,16 @@
 
         <div>
           <label for="checkIn">Заезд</label>
-          <input id="checkIn" type="date">
+          <input id="checkIn" type="text" placeholder="YYYY-MM-DD" readonly>
         </div>
 
         <div>
           <label for="checkOut">Выезд</label>
-          <input id="checkOut" type="date">
+          <input id="checkOut" type="text" placeholder="YYYY-MM-DD" readonly>
         </div>
       </div>
+
+      <div id="calendarHint" class="loading-note">Подготовка календаря…</div>
 
       <div style="display:flex; gap:12px; margin-top:16px;">
         <button id="calcBtn">Рассчитать стоимость</button>
@@ -208,7 +265,7 @@
     </div>
 
     <div class="card">
-      <h2 style="margin-top:0">3. Итог</h2>
+      <h2>3. Итог</h2>
       <div id="summary" class="summary">Заполните параметры и нажмите «Рассчитать стоимость».</div>
     </div>
   </div>
@@ -220,12 +277,27 @@
       tg.expand();
     }
 
+    if (window.flatpickr?.l10ns?.ru) {
+      flatpickr.localize(flatpickr.l10ns.ru);
+    }
+
     const $ = (id) => document.getElementById(id);
 
     let units = [];
     let tariffs = [];
     let selectedUnitId = null;
     let lastCalculation = null;
+
+    let unavailableRanges = [];
+    let disabledCheckInDates = [];
+
+    let checkInPicker = null;
+    let checkOutPicker = null;
+
+    const MIN_LEAD_DAYS = 1;
+    const MIN_STAY_NIGHTS = 1;
+    const MAX_STAY_NIGHTS = 30;
+    const UNAVAILABLE_LOOKAHEAD_DAYS = 365;
 
     function showError(message = "") {
       const box = $("errorBox");
@@ -264,21 +336,25 @@
       if (selected != null) el.value = String(selected);
     }
 
-    function todayLocalISO() {
-      const dt = new Date();
+    function formatDateLocal(dt) {
       const y = dt.getFullYear();
       const m = String(dt.getMonth() + 1).padStart(2, "0");
       const d = String(dt.getDate()).padStart(2, "0");
       return `${y}-${m}-${d}`;
     }
 
+    function parseISODate(iso) {
+      return new Date(iso + "T00:00:00");
+    }
+
+    function todayLocalISO() {
+      return formatDateLocal(new Date());
+    }
+
     function addDays(isoDate, days) {
-      const dt = new Date(isoDate + "T00:00:00");
+      const dt = parseISODate(isoDate);
       dt.setDate(dt.getDate() + days);
-      const y = dt.getFullYear();
-      const m = String(dt.getMonth() + 1).padStart(2, "0");
-      const d = String(dt.getDate()).padStart(2, "0");
-      return `${y}-${m}-${d}`;
+      return formatDateLocal(dt);
     }
 
     function getSelectedUnit() {
@@ -302,13 +378,13 @@
             </div>
           </div>
         `;
-        div.addEventListener("click", () => {
+        div.addEventListener("click", async () => {
+          if (unit.id === selectedUnitId) return;
           selectedUnitId = unit.id;
           renderUnits();
           updateGuestControls();
-          lastCalculation = null;
-          $("sendBtn").disabled = true;
-          $("summary").textContent = "Домик выбран. Теперь можно рассчитать стоимость.";
+          resetCalculationState("Домик выбран. Обновляем доступные даты…");
+          await refreshUnavailableAndCalendars();
         });
         box.appendChild(div);
       });
@@ -342,10 +418,10 @@
       fillSelect($("extraBed"), values, 0);
     }
 
-    function selectedTariffTitle() {
-      const tariffId = Number($("tariff").value);
-      const tariff = tariffs.find(t => t.id === tariffId);
-      return tariff?.title || "";
+    function resetCalculationState(summaryText) {
+      lastCalculation = null;
+      $("sendBtn").disabled = true;
+      $("summary").textContent = summaryText || "Заполните параметры и нажмите «Рассчитать стоимость».";
     }
 
     async function loadInitialData() {
@@ -366,17 +442,14 @@
       );
 
       updateGuestControls();
-
-      const tomorrow = addDays(todayLocalISO(), 1);
-      const dayAfter = addDays(todayLocalISO(), 2);
-      $("checkIn").value = tomorrow;
-      $("checkOut").value = dayAfter;
-      $("checkIn").min = tomorrow;
-      $("checkOut").min = dayAfter;
+      resetCalculationState("Домик выбран. Обновляем доступные даты…");
+      await refreshUnavailableAndCalendars();
     }
 
     function buildPayload() {
       if (!selectedUnitId) throw new Error("Сначала выберите домик.");
+      if (!$("checkIn").value) throw new Error("Выберите дату заезда.");
+      if (!$("checkOut").value) throw new Error("Выберите дату выезда.");
 
       return {
         unit_id: selectedUnitId,
@@ -406,10 +479,151 @@
       `;
     }
 
+    function expandUnavailableDates(items) {
+      const out = [];
+      for (const item of items) {
+        let cur = parseISODate(item.check_in);
+        const end = parseISODate(item.check_out); // exclusive
+        while (cur < end) {
+          out.push(formatDateLocal(cur));
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+      return out;
+    }
+
+    function findNextBlockedStart(checkInISO) {
+      for (const item of unavailableRanges) {
+        if (item.check_in > checkInISO) {
+          return item.check_in;
+        }
+      }
+      return null;
+    }
+
+    async function fetchUnavailableRanges() {
+      const start = addDays(todayLocalISO(), MIN_LEAD_DAYS);
+      const end = addDays(start, UNAVAILABLE_LOOKAHEAD_DAYS);
+
+      const data = await api("/api/v2/bookings/unavailable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          unit_id: selectedUnitId,
+          date_from: start,
+          date_to: end,
+        }),
+      });
+
+      unavailableRanges = Array.isArray(data.items) ? data.items.slice() : [];
+      unavailableRanges.sort((a, b) => a.check_in.localeCompare(b.check_in));
+      disabledCheckInDates = expandUnavailableDates(unavailableRanges);
+    }
+
+    function destroyPickers() {
+      if (checkInPicker) {
+        checkInPicker.destroy();
+        checkInPicker = null;
+      }
+      if (checkOutPicker) {
+        checkOutPicker.destroy();
+        checkOutPicker = null;
+      }
+    }
+
+    function setupCalendars() {
+      destroyPickers();
+
+      const tomorrow = addDays(todayLocalISO(), MIN_LEAD_DAYS);
+      const defaultCheckIn = tomorrow;
+      const defaultCheckOut = addDays(defaultCheckIn, MIN_STAY_NIGHTS);
+
+      $("checkIn").value = defaultCheckIn;
+      $("checkOut").value = defaultCheckOut;
+
+      checkInPicker = flatpickr("#checkIn", {
+        locale: "ru",
+        dateFormat: "Y-m-d",
+        minDate: tomorrow,
+        disableMobile: true,
+        defaultDate: defaultCheckIn,
+        disable: disabledCheckInDates,
+        onChange: function(selectedDates, dateStr) {
+          resetCalculationState("Дата заезда изменена. Пересчитайте стоимость.");
+
+          if (!dateStr) {
+            $("checkOut").value = "";
+            return;
+          }
+
+          const minCheckout = addDays(dateStr, MIN_STAY_NIGHTS);
+          const maxByStay = addDays(dateStr, MAX_STAY_NIGHTS);
+          const nextBlockedStart = findNextBlockedStart(dateStr);
+
+          let maxCheckout = maxByStay;
+          if (nextBlockedStart && nextBlockedStart < maxCheckout) {
+            maxCheckout = nextBlockedStart;
+          }
+
+          checkOutPicker.set("minDate", minCheckout);
+          checkOutPicker.set("maxDate", maxCheckout);
+
+          const currentCheckOut = $("checkOut").value;
+          if (!currentCheckOut || currentCheckOut < minCheckout || currentCheckOut > maxCheckout) {
+            checkOutPicker.setDate(minCheckout, true);
+          }
+        }
+      });
+
+      checkOutPicker = flatpickr("#checkOut", {
+        locale: "ru",
+        dateFormat: "Y-m-d",
+        minDate: defaultCheckOut,
+        maxDate: (() => {
+          const nextBlockedStart = findNextBlockedStart(defaultCheckIn);
+          const maxByStay = addDays(defaultCheckIn, MAX_STAY_NIGHTS);
+          if (nextBlockedStart && nextBlockedStart < maxByStay) return nextBlockedStart;
+          return maxByStay;
+        })(),
+        disableMobile: true,
+        defaultDate: defaultCheckOut,
+        onChange: function() {
+          resetCalculationState("Дата выезда изменена. Пересчитайте стоимость.");
+        }
+      });
+
+      $("calendarHint").textContent = unavailableRanges.length
+        ? "Занятые даты уже скрыты из выбора."
+        : "На выбранный период занятых дат не найдено.";
+    }
+
+    async function refreshUnavailableAndCalendars() {
+      try {
+        showError("");
+        $("calendarHint").textContent = "Загружаем занятые даты…";
+        await fetchUnavailableRanges();
+        setupCalendars();
+      } catch (e) {
+        showError(e.message || "Не удалось загрузить занятые даты.");
+        $("calendarHint").textContent = "Не удалось подготовить календарь.";
+      }
+    }
+
     $("children").addEventListener("change", () => {
       updateExtraBedControls();
-      $("sendBtn").disabled = true;
-      lastCalculation = null;
+      resetCalculationState("Изменено количество детей. Пересчитайте стоимость.");
+    });
+
+    $("adults").addEventListener("change", () => {
+      resetCalculationState("Изменено количество взрослых. Пересчитайте стоимость.");
+    });
+
+    $("extraBed").addEventListener("change", () => {
+      resetCalculationState("Изменены доп. места. Пересчитайте стоимость.");
+    });
+
+    $("tariff").addEventListener("change", () => {
+      resetCalculationState("Изменён тариф. Пересчитайте стоимость.");
     });
 
     $("calcBtn").addEventListener("click", async () => {
