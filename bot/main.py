@@ -944,12 +944,24 @@ async def paid_click(callback: CallbackQuery):
     )
 
 
-async def find_receipt_target(tg_user_id: int) -> dict | None:
+async def find_receipt_target(tg_user_id: int, preferred_booking_id: int | None = None) -> dict | None:
     data = await api_post("/api/v2/bookings/active", {"tg_user_id": tg_user_id})
     items = data.get("items", [])
-    for item in items:
-        if item["status"] in ("AWAITING_RECEIPT", "PENDING_REVIEW"):
-            return item
+
+    candidates = [
+        item for item in items
+        if item["status"] in ("AWAITING_RECEIPT", "PENDING_REVIEW")
+    ]
+
+    if preferred_booking_id is not None:
+        for item in candidates:
+            if int(item["booking_id"]) == int(preferred_booking_id):
+                return item
+        return None
+
+    if len(candidates) == 1:
+        return candidates[0]
+
     return None
 
 

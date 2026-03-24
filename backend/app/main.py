@@ -816,10 +816,18 @@ async def booking_receipt_uploaded(req: UserBookingActionRequest):
 @app.post("/api/v2/admin/bookings/list", response_model=AdminBookingsListResponse)
 async def admin_list_bookings(req: AdminBookingsListRequest):
     async with SessionLocal() as session:
+        total_q = await session.execute(
+            select(func.count())
+            .select_from(Booking)
+            .where(admin_status_condition(req.status_group))
+        )
+        total_count = int(total_q.scalar() or 0)
+
         q = await session.execute(
-            select(Booking, Unit, Tariff)
+            select(Booking, Unit, Tariff, PaymentLog)
             .join(Unit, Unit.id == Booking.unit_id)
             .join(Tariff, Tariff.id == Booking.tariff_id)
+            .outerjoin(PaymentLog, PaymentLog.booking_id == Booking.id)
             .where(admin_status_condition(req.status_group))
             .order_by(Booking.created_at.desc())
             .limit(req.limit)
@@ -827,8 +835,9 @@ async def admin_list_bookings(req: AdminBookingsListRequest):
 
         items: list[AdminBookingItem] = []
 
-        for booking, unit, tariff in q.all():
+        for booking, unit, tariff, payment_log in q.all():
             can_confirm, can_reject = admin_action_flags(booking.status)
+            expires_at = get_booking_expires_at(booking)
 
             items.append(
                 AdminBookingItem(
@@ -857,12 +866,14 @@ async def admin_list_bookings(req: AdminBookingsListRequest):
                     confirmed_at=booking.confirmed_at.isoformat() if booking.confirmed_at else None,
                     cancelled_at=booking.cancelled_at.isoformat() if booking.cancelled_at else None,
                     expired_at=booking.expired_at.isoformat() if booking.expired_at else None,
+                    expires_at=expires_at.isoformat() if expires_at else None,
+                    receipt_attached=bool(payment_log.receipt_attached) if payment_log else False,
                     can_confirm=can_confirm,
                     can_reject=can_reject,
                 )
             )
 
-        return AdminBookingsListResponse(items=items)
+        return AdminBookingsListResponse(items=items, count=total_count)
 
 
 @app.post("/api/v2/admin/bookings/confirm", response_model=BookingActionResponse)

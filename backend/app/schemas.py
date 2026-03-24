@@ -115,9 +115,14 @@ class ActiveBookingsRequest(BaseModel):
     tg_user_id: int = Field(..., ge=1)
 
 
-class ActiveBookingItem(BaseModel):
+class AdminBookingItem(BaseModel):
     booking_id: int
     status: str
+
+    tg_user_id: int
+    phone: str
+    telegram_name: str | None = None
+    telegram_username: str | None = None
 
     unit_id: int
     unit_title: str
@@ -137,13 +142,23 @@ class ActiveBookingItem(BaseModel):
     total_amount: int
     prepay_amount: int
 
-    expires_at: str | None
-    can_cancel: bool
-    cancel_reason: str | None = None
+    created_at: str
+    paid_clicked_at: str | None = None
+    receipt_received_at: str | None = None
+    confirmed_at: str | None = None
+    cancelled_at: str | None = None
+    expired_at: str | None = None
+
+    expires_at: str | None = None
+    receipt_attached: bool = False
+
+    can_confirm: bool
+    can_reject: bool
 
 
-class ActiveBookingsResponse(BaseModel):
-    items: list[ActiveBookingItem]
+class AdminBookingsListResponse(BaseModel):
+    items: list[AdminBookingItem]
+    count: int
 
 
 class CancelBookingRequest(BaseModel):
