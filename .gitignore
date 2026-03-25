@@ -19,4 +19,7 @@ venv/
 *~
 
 _backup_*/
-*.pdf
+*.pdfbot/admin_messages.json
+
+Untitled 1.pdf
+bot/admin_messages.json
