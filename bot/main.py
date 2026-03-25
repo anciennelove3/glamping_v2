@@ -79,6 +79,7 @@ ADMIN_CHAT_ID = parse_admin_chat_id(ADMIN_CHAT_ID_RAW)
 ADMIN_USER_IDS = parse_admin_user_ids(ADMIN_USER_IDS_RAW)
 
 ADMIN_MESSAGES_PATH = os.path.join(os.path.dirname(__file__), "admin_messages.json")
+BOOKING_CONTACTS_PATH = os.path.join(os.path.dirname(__file__), "booking_contacts.json")
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -105,14 +106,14 @@ def contact_url(username: str) -> str:
 
 
 def mention_user(name: str | None, username: str | None, tg_user_id: int | None) -> str:
+    if username:
+        safe_username = html.escape(username.lstrip("@"))
+        return f'<a href="https://t.me/{safe_username}">@{safe_username}</a>'
+
     safe_name = html.escape(name or "Гость")
 
     if tg_user_id and int(tg_user_id) > 0:
         return f'<a href="tg://user?id={int(tg_user_id)}">{safe_name}</a>'
-
-    if username:
-        safe_username = html.escape(username.lstrip("@"))
-        return f'<a href="https://t.me/{safe_username}">{safe_name}</a>'
 
     return safe_name
 
@@ -276,6 +277,57 @@ def forget_admin_message(booking_id: int) -> None:
     if str(booking_id) in data:
         data.pop(str(booking_id), None)
         save_admin_messages(data)
+
+
+def load_booking_contacts() -> dict:
+    try:
+        if not os.path.exists(BOOKING_CONTACTS_PATH):
+            return {}
+        with open(BOOKING_CONTACTS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        logging.exception("Failed to load booking contacts map")
+        return {}
+
+
+def save_booking_contacts(data: dict) -> None:
+    try:
+        tmp_path = BOOKING_CONTACTS_PATH + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, BOOKING_CONTACTS_PATH)
+    except Exception:
+        logging.exception("Failed to save booking contacts map")
+
+
+def remember_booking_contact(
+    booking_id: int,
+    *,
+    tg_user_id: int | None,
+    guest_name: str | None,
+    guest_username: str | None,
+    phone: str | None,
+) -> None:
+    data = load_booking_contacts()
+    data[str(booking_id)] = {
+        "tg_user_id": tg_user_id,
+        "guest_name": guest_name,
+        "guest_username": guest_username,
+        "phone": phone,
+    }
+    save_booking_contacts(data)
+
+
+def get_booking_contact(booking_id: int) -> dict | None:
+    data = load_booking_contacts()
+    return data.get(str(booking_id))
+
+
+def forget_booking_contact(booking_id: int) -> None:
+    data = load_booking_contacts()
+    if str(booking_id) in data:
+        data.pop(str(booking_id), None)
+        save_booking_contacts(data)
 
 
 def replace_status_line(text: str, new_status: str) -> str:
@@ -680,14 +732,22 @@ async def notify_admin_receipt(
         logging.exception("Failed to notify admin about receipt")
 
 
-async def notify_admin_cancel(*, guest_tg_user_id: int, booking_id: int):
+async def notify_admin_cancel(
+    *,
+    guest_tg_user_id: int | None,
+    guest_name: str | None,
+    guest_username: str | None,
+    booking_id: int,
+):
     if not ADMIN_CHAT_ID:
         return
+
+    guest_line = mention_user(guest_name, guest_username, guest_tg_user_id)
 
     text = (
         "❌ <b>Бронь отменена гостем</b>\n\n"
         f"🆔 Бронь: <code>{booking_id}</code>\n"
-        f"👤 tg_user_id: <code>{guest_tg_user_id}</code>\n"
+        f"👤 Гость: {guest_line}\n"
         "📌 Статус: <b>Бронь отменена</b>"
     )
 
@@ -723,10 +783,7 @@ async def admin_panel(message: Message):
         await message.answer("⛔ Доступ запрещён.", reply_markup=main_kb())
         return
 
-    text = (
-        "🛠 <b>Админ-панель</b>\n\n"
-        "Выберите раздел ниже:"
-    )
+    text = "🛠 <b>Админ-панель</b>\n\nВыберите раздел ниже:"
     await message.answer(text, parse_mode="HTML", reply_markup=admin_panel_kb())
 
 
@@ -816,23 +873,14 @@ async def booking_fallback(message: Message):
 @dp.message(F.text == "📅 Мои брони")
 async def show_active_bookings(message: Message):
     try:
-        data = await api_post(
-            "/api/v2/bookings/active",
-            {"tg_user_id": message.from_user.id},
-        )
+        data = await api_post("/api/v2/bookings/active", {"tg_user_id": message.from_user.id})
     except Exception as e:
-        await message.answer(
-            f"Не удалось получить брони:\n{e}",
-            reply_markup=main_kb(),
-        )
+        await message.answer(f"Не удалось получить брони:\n{e}", reply_markup=main_kb())
         return
 
     items = data.get("items", [])
     if not items:
-        await message.answer(
-            "У вас пока нет активных броней.",
-            reply_markup=main_kb(),
-        )
+        await message.answer("У вас пока нет активных броней.", reply_markup=main_kb())
         return
 
     await message.answer(
@@ -859,12 +907,7 @@ async def show_active_bookings(message: Message):
 @dp.message(F.text == "📞 Связаться с нами")
 async def contact_us(message: Message):
     await message.answer(
-        f"📞 Связаться с нами можно здесь: <b>{html.escape(CONTACT_USERNAME)}</b>",
-        parse_mode="HTML",
-        reply_markup=main_kb(),
-    )
-    await message.answer(
-        "Нажмите кнопку ниже:",
+        "📞 Связаться с нами можно по кнопке ниже:",
         reply_markup=contact_support_kb(),
     )
 
@@ -998,6 +1041,14 @@ async def on_contact(message: Message, state: FSMContext):
 
     await state.clear()
 
+    remember_booking_contact(
+        created["booking_id"],
+        tg_user_id=message.from_user.id,
+        guest_name=message.from_user.full_name,
+        guest_username=message.from_user.username,
+        phone=message.contact.phone_number,
+    )
+
     await notify_admin_new_booking(
         guest_tg_user_id=message.from_user.id,
         guest_name=message.from_user.full_name,
@@ -1059,6 +1110,8 @@ async def cancel_booking(callback: CallbackQuery, state: FSMContext):
 
     await notify_admin_cancel(
         guest_tg_user_id=callback.from_user.id,
+        guest_name=callback.from_user.full_name,
+        guest_username=callback.from_user.username,
         booking_id=booking_id,
     )
 
@@ -1161,11 +1214,13 @@ async def on_receipt_photo(message: Message, state: FSMContext):
 
     await state.update_data(receipt_booking_id=None)
 
+    saved_contact = get_booking_contact(target["booking_id"]) or {}
+
     await notify_admin_receipt(
-        guest_tg_user_id=message.from_user.id,
-        guest_name=message.from_user.full_name,
-        guest_username=message.from_user.username,
-        phone="не указан в уведомлении",
+        guest_tg_user_id=saved_contact.get("tg_user_id") or message.from_user.id,
+        guest_name=saved_contact.get("guest_name") or message.from_user.full_name,
+        guest_username=saved_contact.get("guest_username") or message.from_user.username,
+        phone=saved_contact.get("phone") or "—",
         item={**target, "status": result["status"]},
         file_type="photo",
         file_id=message.photo[-1].file_id,
@@ -1215,11 +1270,13 @@ async def on_receipt_document(message: Message, state: FSMContext):
 
     await state.update_data(receipt_booking_id=None)
 
+    saved_contact = get_booking_contact(target["booking_id"]) or {}
+
     await notify_admin_receipt(
-        guest_tg_user_id=message.from_user.id,
-        guest_name=message.from_user.full_name,
-        guest_username=message.from_user.username,
-        phone="не указан в уведомлении",
+        guest_tg_user_id=saved_contact.get("tg_user_id") or message.from_user.id,
+        guest_name=saved_contact.get("guest_name") or message.from_user.full_name,
+        guest_username=saved_contact.get("guest_username") or message.from_user.username,
+        phone=saved_contact.get("phone") or "—",
         item={**target, "status": result["status"]},
         file_type="document",
         file_id=message.document.file_id,

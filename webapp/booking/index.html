@@ -81,6 +81,7 @@
     select, input {
       background: #0b1220;
       color: var(--text);
+      -webkit-text-fill-color: var(--text);
     }
 
     button {
@@ -167,25 +168,100 @@
       background: #0b1220;
       border: 1px solid var(--line);
       box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      color: #f8fafc;
     }
 
-    .flatpickr-months .flatpickr-month,
-    .flatpickr-current-month input.cur-year,
-    .flatpickr-current-month .flatpickr-monthDropdown-months,
-    span.flatpickr-weekday,
-    .flatpickr-day,
-    .numInputWrapper span.arrowUp:after,
-    .numInputWrapper span.arrowDown:after {
+    .flatpickr-months {
+      padding: 8px 8px 0;
+    }
+
+    .flatpickr-months .flatpickr-month {
+      height: 42px;
+      color: #f8fafc;
+      fill: #f8fafc;
+    }
+
+    .flatpickr-current-month {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 42px;
+      height: 42px;
+      font-size: 16px;
+    }
+
+    .flatpickr-current-month .cur-month {
+      color: #f8fafc;
+      font-weight: 700;
+      font-size: 16px;
+    }
+
+    .flatpickr-current-month input.cur-year {
+      background: transparent;
+      color: #f8fafc;
+      border: none;
+      font-size: 16px;
+      font-weight: 700;
+      width: 58px;
+      height: 28px;
+      padding: 0;
+      box-shadow: none;
+      -webkit-text-fill-color: #f8fafc;
+    }
+
+    .flatpickr-current-month input.cur-year:focus {
+      outline: none;
+    }
+
+    .flatpickr-current-month .numInputWrapper {
+      width: 58px;
+    }
+
+    .flatpickr-current-month .numInputWrapper span.arrowUp,
+    .flatpickr-current-month .numInputWrapper span.arrowDown {
+      border-left: 1px solid #334155;
+    }
+
+    .flatpickr-current-month .numInputWrapper span.arrowUp:after {
+      border-bottom-color: #f8fafc;
+    }
+
+    .flatpickr-current-month .numInputWrapper span.arrowDown:after {
+      border-top-color: #f8fafc;
+    }
+
+    .flatpickr-months .flatpickr-prev-month,
+    .flatpickr-months .flatpickr-next-month {
+      top: 10px;
+      padding: 8px;
       color: #f8fafc;
     }
 
     .flatpickr-months .flatpickr-prev-month svg,
     .flatpickr-months .flatpickr-next-month svg {
+      width: 14px;
+      height: 14px;
       fill: #f8fafc;
+      stroke: #f8fafc;
+    }
+
+    .flatpickr-weekdays {
+      background: transparent;
+    }
+
+    span.flatpickr-weekday {
+      color: #cbd5e1;
+      font-weight: 600;
     }
 
     .flatpickr-day {
       border-radius: 10px;
+      color: #f8fafc;
+    }
+
+    .flatpickr-day.today {
+      border-color: #475569;
     }
 
     .flatpickr-day.selected,
@@ -196,10 +272,23 @@
       color: #062b14;
     }
 
+    .flatpickr-day.inRange {
+      background: rgba(34, 197, 94, 0.15);
+      border-color: transparent;
+      box-shadow: none;
+    }
+
     .flatpickr-day.disabled,
-    .flatpickr-day.flatpickr-disabled {
+    .flatpickr-day.flatpickr-disabled,
+    .flatpickr-day.prevMonthDay,
+    .flatpickr-day.nextMonthDay {
       color: #475569 !important;
       cursor: not-allowed;
+    }
+
+    .flatpickr-day:hover:not(.flatpickr-disabled):not(.disabled) {
+      background: #172033;
+      border-color: #334155;
     }
 
     @media (max-width: 700px) {
@@ -208,65 +297,6 @@
         grid-template-columns: 1fr;
       }
     }
-select,
-input,
-button {
-  color: #f8fafc !important;
-}
-
-select,
-input {
-  background: #0b1220 !important;
-  border: 1px solid #1f2937 !important;
-  -webkit-text-fill-color: #f8fafc !important;
-  opacity: 1 !important;
-}
-
-option {
-  color: #f8fafc !important;
-  background: #0b1220 !important;
-}
-
-.flatpickr-calendar,
-.flatpickr-months,
-.flatpickr-current-month,
-.flatpickr-weekdays,
-.flatpickr-days {
-  color: #f8fafc !important;
-}
-
-.flatpickr-current-month,
-.flatpickr-current-month .cur-month,
-.flatpickr-current-month input.cur-year,
-.flatpickr-monthDropdown-months {
-  color: #f8fafc !important;
-  background: transparent !important;
-  -webkit-text-fill-color: #f8fafc !important;
-}
-
-.flatpickr-current-month input.cur-year {
-  border: none !important;
-  box-shadow: none !important;
-}
-
-.flatpickr-months .flatpickr-prev-month svg,
-.flatpickr-months .flatpickr-next-month svg {
-  fill: #f8fafc !important;
-  stroke: #f8fafc !important;
-}
-
-span.flatpickr-weekday,
-.flatpickr-day {
-  color: #f8fafc !important;
-}
-
-.flatpickr-day.disabled,
-.flatpickr-day.flatpickr-disabled,
-.flatpickr-day.prevMonthDay,
-.flatpickr-day.nextMonthDay {
-  color: #475569 !important;
-}
-
   </style>
 </head>
 <body>
@@ -542,7 +572,7 @@ span.flatpickr-weekday,
       const out = [];
       for (const item of items) {
         let cur = parseISODate(item.check_in);
-        const end = parseISODate(item.check_out); // exclusive
+        const end = parseISODate(item.check_out);
         while (cur < end) {
           out.push(formatDateLocal(cur));
           cur.setDate(cur.getDate() + 1);
@@ -590,12 +620,55 @@ span.flatpickr-weekday,
       }
     }
 
+    function updateCheckoutConstraints(checkInISO, forceReset = false) {
+      if (!checkOutPicker || !checkInISO) return;
+
+      const horizonMaxDate = addDays(todayLocalISO(), UNAVAILABLE_LOOKAHEAD_DAYS);
+      const minCheckout = addDays(checkInISO, MIN_STAY_NIGHTS);
+      const maxByStay = addDays(checkInISO, MAX_STAY_NIGHTS);
+      const nextBlockedStart = findNextBlockedStart(checkInISO);
+
+      checkOutPicker.set("minDate", minCheckout);
+      checkOutPicker.set("maxDate", horizonMaxDate);
+
+      checkOutPicker.set("disable", [
+        function(date) {
+          const iso = formatDateLocal(date);
+
+          if (iso < minCheckout) return true;
+          if (iso > maxByStay) return true;
+
+          // checkout в день следующего заезда разрешаем,
+          // позже — уже нельзя
+          if (nextBlockedStart && iso > nextBlockedStart) return true;
+
+          return false;
+        }
+      ]);
+
+      const currentCheckOut = $("checkOut").value;
+      const invalidCurrent =
+        !currentCheckOut ||
+        currentCheckOut < minCheckout ||
+        currentCheckOut > maxByStay ||
+        (nextBlockedStart && currentCheckOut > nextBlockedStart);
+
+      if (forceReset || invalidCurrent) {
+        let safeCheckout = minCheckout;
+        if (nextBlockedStart && nextBlockedStart >= minCheckout && nextBlockedStart <= maxByStay) {
+          safeCheckout = minCheckout;
+        }
+        checkOutPicker.setDate(safeCheckout, true);
+      }
+    }
+
     function setupCalendars() {
       destroyPickers();
 
       const tomorrow = addDays(todayLocalISO(), MIN_LEAD_DAYS);
       const defaultCheckIn = tomorrow;
       const defaultCheckOut = addDays(defaultCheckIn, MIN_STAY_NIGHTS);
+      const horizonMaxDate = addDays(todayLocalISO(), UNAVAILABLE_LOOKAHEAD_DAYS);
 
       $("checkIn").value = defaultCheckIn;
       $("checkOut").value = defaultCheckOut;
@@ -603,7 +676,11 @@ span.flatpickr-weekday,
       checkInPicker = flatpickr("#checkIn", {
         locale: "ru",
         dateFormat: "Y-m-d",
+        monthSelectorType: "static",
+        prevArrow: "<svg viewBox='0 0 24 24'><path d='M15.5 19l-7-7 7-7'/></svg>",
+        nextArrow: "<svg viewBox='0 0 24 24'><path d='M8.5 5l7 7-7 7'/></svg>",
         minDate: tomorrow,
+        maxDate: horizonMaxDate,
         disableMobile: true,
         defaultDate: defaultCheckIn,
         disable: disabledCheckInDates,
@@ -615,41 +692,27 @@ span.flatpickr-weekday,
             return;
           }
 
-          const minCheckout = addDays(dateStr, MIN_STAY_NIGHTS);
-          const maxByStay = addDays(dateStr, MAX_STAY_NIGHTS);
-          const nextBlockedStart = findNextBlockedStart(dateStr);
-
-          let maxCheckout = maxByStay;
-          if (nextBlockedStart && nextBlockedStart < maxCheckout) {
-            maxCheckout = nextBlockedStart;
-          }
-
-          checkOutPicker.set("minDate", minCheckout);
-          checkOutPicker.set("maxDate", maxCheckout);
-
-          const currentCheckOut = $("checkOut").value;
-          if (!currentCheckOut || currentCheckOut < minCheckout || currentCheckOut > maxCheckout) {
-            checkOutPicker.setDate(minCheckout, true);
-          }
+          updateCheckoutConstraints(dateStr, true);
         }
       });
 
       checkOutPicker = flatpickr("#checkOut", {
         locale: "ru",
         dateFormat: "Y-m-d",
+        monthSelectorType: "static",
+        prevArrow: "<svg viewBox='0 0 24 24'><path d='M15.5 19l-7-7 7-7'/></svg>",
+        nextArrow: "<svg viewBox='0 0 24 24'><path d='M8.5 5l7 7-7 7'/></svg>",
         minDate: defaultCheckOut,
-        maxDate: (() => {
-          const nextBlockedStart = findNextBlockedStart(defaultCheckIn);
-          const maxByStay = addDays(defaultCheckIn, MAX_STAY_NIGHTS);
-          if (nextBlockedStart && nextBlockedStart < maxByStay) return nextBlockedStart;
-          return maxByStay;
-        })(),
+        maxDate: horizonMaxDate,
         disableMobile: true,
         defaultDate: defaultCheckOut,
+        disable: [],
         onChange: function() {
           resetCalculationState("Дата выезда изменена. Пересчитайте стоимость.");
         }
       });
+
+      updateCheckoutConstraints(defaultCheckIn, true);
 
       $("calendarHint").textContent = unavailableRanges.length
         ? "Занятые даты уже скрыты из выбора."
