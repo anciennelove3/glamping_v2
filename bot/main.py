@@ -131,13 +131,11 @@ def main_kb() -> ReplyKeyboardMarkup:
     )
 
 
-def admin_webapp_kb() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🛠 Открыть админку", web_app=WebAppInfo(url=ADMIN_WEBAPP_URL))],
-            [KeyboardButton(text="⬅️ Назад")],
-        ],
-        resize_keyboard=True,
+def admin_webapp_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🛠 Открыть админку", web_app=WebAppInfo(url=ADMIN_WEBAPP_URL))]
+        ]
     )
 
 
@@ -789,29 +787,13 @@ async def start(message: Message, state: FSMContext):
 
 
 @dp.message(Command("admin"))
-async def admin_panel(message: Message, state: FSMContext):
+async def admin_panel(message: Message):
     if not is_admin(message.from_user.id):
         await message.answer("⛔ Доступ запрещён.", reply_markup=main_kb())
         return
 
-    await state.clear()
-
-    if ADMIN_WEBAPP_URL:
-        text = (
-            "🛠 <b>Админка бронирований</b>\n\n"
-            "Нажми кнопку ниже, чтобы открыть webapp и вручную отменять текущие брони."
-        )
-        await message.answer(text, parse_mode="HTML", reply_markup=admin_webapp_kb())
-        return
-
-    text = "ADMIN_WEBAPP_URL не задан. Пока доступна только старая inline-админка."
-    await message.answer(text, reply_markup=admin_panel_kb())
-
-
-@dp.message(F.text == "⬅️ Назад")
-async def back_to_main(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer("Главное меню.", reply_markup=main_kb())
+    text = "🛠 <b>Админ-панель</b>\n\nВыберите раздел ниже:"
+    await message.answer(text, parse_mode="HTML", reply_markup=admin_panel_kb())
 
 
 @dp.callback_query(F.data == "adm:panel")
