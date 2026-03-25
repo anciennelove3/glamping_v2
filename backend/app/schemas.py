@@ -212,6 +212,7 @@ class AdminBookingItem(BaseModel):
 
     can_confirm: bool
     can_reject: bool
+    can_cancel: bool
 
 
 class AdminBookingsListResponse(BaseModel):
@@ -240,6 +241,10 @@ class UnavailableDatesRequest(BaseModel):
     unit_id: int = Field(..., ge=1)
     date_from: date
     date_to: date
+
+
+class AdminWebappListRequest(BaseModel):
+    limit: int = Field(default=20, ge=1, le=100)
 
 
 class UnavailableDatesResponse(BaseModel):

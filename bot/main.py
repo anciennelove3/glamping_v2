@@ -33,6 +33,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 API_BASE_URL = os.getenv("API_BASE_URL", "").rstrip("/")
 BOOKING_WEBAPP_URL = os.getenv("BOOKING_WEBAPP_URL", "").strip()
 ROUTES_WEBAPP_URL = os.getenv("ROUTES_WEBAPP_URL", "").strip()
+ADMIN_WEBAPP_URL = os.getenv("ADMIN_WEBAPP_URL", "").strip()
 ABOUT_TEXT = os.getenv("ABOUT_TEXT", "Информация о нас скоро появится.")
 
 CONTACT_USERNAME = os.getenv("CONTACT_USERNAME", "@username").strip()
@@ -125,6 +126,16 @@ def main_kb() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="📅 Мои брони")],
             [KeyboardButton(text="📞 Связаться с нами")],
             [KeyboardButton(text="❓ Правила проживания")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def admin_webapp_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🛠 Открыть админку", web_app=WebAppInfo(url=ADMIN_WEBAPP_URL))],
+            [KeyboardButton(text="⬅️ Назад")],
         ],
         resize_keyboard=True,
     )
@@ -778,13 +789,29 @@ async def start(message: Message, state: FSMContext):
 
 
 @dp.message(Command("admin"))
-async def admin_panel(message: Message):
+async def admin_panel(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         await message.answer("⛔ Доступ запрещён.", reply_markup=main_kb())
         return
 
-    text = "🛠 <b>Админ-панель</b>\n\nВыберите раздел ниже:"
-    await message.answer(text, parse_mode="HTML", reply_markup=admin_panel_kb())
+    await state.clear()
+
+    if ADMIN_WEBAPP_URL:
+        text = (
+            "🛠 <b>Админка бронирований</b>\n\n"
+            "Нажми кнопку ниже, чтобы открыть webapp и вручную отменять текущие брони."
+        )
+        await message.answer(text, parse_mode="HTML", reply_markup=admin_webapp_kb())
+        return
+
+    text = "ADMIN_WEBAPP_URL не задан. Пока доступна только старая inline-админка."
+    await message.answer(text, reply_markup=admin_panel_kb())
+
+
+@dp.message(F.text == "⬅️ Назад")
+async def back_to_main(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Главное меню.", reply_markup=main_kb())
 
 
 @dp.callback_query(F.data == "adm:panel")

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
+import json
 from datetime import date, datetime, timedelta, timezone
+from urllib.parse import parse_qsl
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from sqlalchemy import and_, func, or_, select, update
 
 from .config import (
+    ADMIN_USER_IDS,
     APP_TITLE,
     AWAITING_PAYMENT_MINUTES,
     BOOKING_TZ,
@@ -20,6 +25,7 @@ from .config import (
     MIN_STAY_NIGHTS,
     PREPAY_RATE,
     REAPER_INTERVAL_SEC,
+    TG_BOT_TOKEN,
 )
 from .db import Base, SessionLocal, engine
 from .models import (
@@ -42,6 +48,7 @@ from .schemas import (
     AdminBookingItem,
     AdminBookingsListRequest,
     AdminBookingsListResponse,
+    AdminWebappListRequest,
     BookingActionResponse,
     CalculateBookingRequest,
     CalculateBookingResponse,
@@ -54,10 +61,10 @@ from .schemas import (
     ReaperRunResponse,
     TariffOut,
     UnitOut,
-    UserBookingActionRequest,
     UnavailableDateRangeItem,
     UnavailableDatesRequest,
     UnavailableDatesResponse,
+    UserBookingActionRequest,
 )
 from .seed import seed_if_needed
 
@@ -302,12 +309,14 @@ def booking_cancel_policy(booking: Booking, today: date) -> tuple[bool, str | No
     return False, "Отмена недоступна для текущего статуса."
 
 
-def admin_action_flags(status: BookingStatus) -> tuple[bool, bool]:
+def admin_action_flags(status: BookingStatus) -> tuple[bool, bool, bool]:
     if status in (BookingStatus.AWAITING_RECEIPT, BookingStatus.PENDING_REVIEW):
-        return True, True
+        return True, True, True
     if status == BookingStatus.AWAITING_PAYMENT:
-        return False, True
-    return False, False
+        return False, True, True
+    if status == BookingStatus.CONFIRMED:
+        return False, False, True
+    return False, False, False
 
 
 def admin_status_condition(status_group: str):
@@ -324,6 +333,54 @@ def admin_status_condition(status_group: str):
         return Booking.status.in_((BookingStatus.CANCELLED, BookingStatus.EXPIRED, BookingStatus.COMPLETED))
 
     raise HTTPException(status_code=400, detail="Unknown admin status group")
+
+
+def _build_telegram_data_check_string(init_data: str) -> str:
+    pairs = parse_qsl(init_data, keep_blank_values=True)
+    filtered = [(k, v) for k, v in pairs if k != "hash"]
+    filtered.sort(key=lambda item: item[0])
+    return "\n".join(f"{k}={v}" for k, v in filtered)
+
+
+def verify_telegram_webapp_init_data(init_data: str) -> int | None:
+    if not init_data or not TG_BOT_TOKEN:
+        return None
+
+    pairs = dict(parse_qsl(init_data, keep_blank_values=True))
+    received_hash = pairs.get("hash")
+    if not received_hash:
+        return None
+
+    check_string = _build_telegram_data_check_string(init_data)
+    secret_key = hmac.new(b"WebAppData", TG_BOT_TOKEN.encode(), hashlib.sha256).digest()
+    calculated_hash = hmac.new(secret_key, check_string.encode(), hashlib.sha256).hexdigest()
+
+    if not hmac.compare_digest(calculated_hash, received_hash):
+        return None
+
+    user_raw = pairs.get("user")
+    if not user_raw:
+        return None
+
+    try:
+        user = json.loads(user_raw)
+        return int(user.get("id"))
+    except Exception:
+        return None
+
+
+def require_admin_user(telegram_init_data: str | None) -> int:
+    if not ADMIN_USER_IDS:
+        raise HTTPException(status_code=500, detail="ADMIN_USER_IDS is not configured")
+
+    user_id = verify_telegram_webapp_init_data(telegram_init_data or "")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Admin auth failed")
+
+    if user_id not in ADMIN_USER_IDS:
+        raise HTTPException(status_code=403, detail="Admin access denied")
+
+    return user_id
 
 
 async def expire_stale_bookings() -> dict[str, int]:
@@ -481,6 +538,7 @@ async def calculate_booking(req: CalculateBookingRequest):
             breakdown=calc["breakdown"],
         )
 
+
 @app.post("/api/v2/bookings/unavailable", response_model=UnavailableDatesResponse)
 async def bookings_unavailable(req: UnavailableDatesRequest):
     now_dt = now_utc()
@@ -525,8 +583,6 @@ async def bookings_unavailable(req: UnavailableDatesRequest):
         current = raw_ranges[0].copy()
 
         for item in raw_ranges[1:]:
-            # Пересечение или стык диапазонов:
-            # [25, 28) и [28, 30) можно слить в [25, 30)
             if item["check_in"] <= current["check_out"]:
                 if item["check_out"] > current["check_out"]:
                     current["check_out"] = item["check_out"]
@@ -548,7 +604,6 @@ async def bookings_unavailable(req: UnavailableDatesRequest):
                 for item in merged
             ],
         )
-
 
 
 @app.post("/api/v2/bookings/create", response_model=CreateBookingResponse)
@@ -908,7 +963,7 @@ async def admin_list_bookings(req: AdminBookingsListRequest):
         items: list[AdminBookingItem] = []
 
         for booking, unit, tariff, payment_log in q.all():
-            can_confirm, can_reject = admin_action_flags(booking.status)
+            can_confirm, can_reject, can_cancel = admin_action_flags(booking.status)
             expires_at = get_booking_expires_at(booking)
 
             items.append(
@@ -942,6 +997,7 @@ async def admin_list_bookings(req: AdminBookingsListRequest):
                     receipt_attached=bool(payment_log.receipt_attached) if payment_log else False,
                     can_confirm=can_confirm,
                     can_reject=can_reject,
+                    can_cancel=can_cancel,
                 )
             )
 
@@ -1038,6 +1094,127 @@ async def admin_reject_booking(req: AdminBookingActionRequest):
             status=booking.status.value,
             expires_at=None,
             message="Booking rejected by admin",
+        )
+
+
+@app.post("/api/v2/admin/webapp/bookings/list", response_model=AdminBookingsListResponse)
+async def admin_webapp_list_bookings(
+    req: AdminWebappListRequest,
+    x_telegram_init_data: str | None = Header(default=None),
+):
+    require_admin_user(x_telegram_init_data)
+    today = today_local_date()
+
+    condition = and_(
+        Booking.status == BookingStatus.CONFIRMED,
+        Booking.check_out > today,
+    )
+
+    async with SessionLocal() as session:
+        total_q = await session.execute(
+            select(func.count())
+            .select_from(Booking)
+            .where(condition)
+        )
+        total_count = int(total_q.scalar() or 0)
+
+        q = await session.execute(
+            select(Booking, Unit, Tariff, PaymentLog)
+            .join(Unit, Unit.id == Booking.unit_id)
+            .join(Tariff, Tariff.id == Booking.tariff_id)
+            .outerjoin(PaymentLog, PaymentLog.booking_id == Booking.id)
+            .where(condition)
+            .order_by(Booking.check_in.asc(), Booking.created_at.desc())
+            .limit(req.limit)
+        )
+
+        items: list[AdminBookingItem] = []
+
+        for booking, unit, tariff, payment_log in q.all():
+            items.append(
+                AdminBookingItem(
+                    booking_id=booking.id,
+                    status=booking.status.value,
+                    tg_user_id=booking.tg_user_id,
+                    phone=booking.phone,
+                    telegram_name=booking.telegram_name,
+                    telegram_username=booking.telegram_username,
+                    unit_id=booking.unit_id,
+                    unit_title=unit.title,
+                    tariff_id=booking.tariff_id,
+                    tariff_title=tariff.title,
+                    adults=booking.adults,
+                    children=booking.children,
+                    total_guests=booking.total_guests,
+                    extra_bed_count=booking.extra_bed_count,
+                    check_in=booking.check_in.isoformat(),
+                    check_out=booking.check_out.isoformat(),
+                    nights=booking.nights,
+                    total_amount=booking.total_amount,
+                    prepay_amount=booking.prepay_amount,
+                    created_at=booking.created_at.isoformat(),
+                    paid_clicked_at=booking.paid_clicked_at.isoformat() if booking.paid_clicked_at else None,
+                    receipt_received_at=booking.receipt_received_at.isoformat() if booking.receipt_received_at else None,
+                    confirmed_at=booking.confirmed_at.isoformat() if booking.confirmed_at else None,
+                    cancelled_at=booking.cancelled_at.isoformat() if booking.cancelled_at else None,
+                    expired_at=booking.expired_at.isoformat() if booking.expired_at else None,
+                    expires_at=None,
+                    receipt_attached=bool(payment_log.receipt_attached) if payment_log else False,
+                    can_confirm=False,
+                    can_reject=False,
+                    can_cancel=True,
+                )
+            )
+
+        return AdminBookingsListResponse(items=items, count=total_count)
+
+
+@app.post("/api/v2/admin/webapp/bookings/cancel", response_model=BookingActionResponse)
+async def admin_webapp_cancel_booking(
+    req: AdminBookingActionRequest,
+    x_telegram_init_data: str | None = Header(default=None),
+):
+    require_admin_user(x_telegram_init_data)
+    now_dt = now_utc()
+    today = today_local_date()
+
+    async with SessionLocal() as session:
+        q = await session.execute(select(Booking).where(Booking.id == req.booking_id))
+        booking = q.scalar_one_or_none()
+
+        if not booking:
+            raise HTTPException(status_code=404, detail="Booking not found")
+
+        if booking.status in (BookingStatus.CANCELLED, BookingStatus.EXPIRED, BookingStatus.COMPLETED):
+            return BookingActionResponse(
+                booking_id=booking.id,
+                status=booking.status.value,
+                expires_at=None,
+                message="Booking already closed",
+            )
+
+        if booking.status != BookingStatus.CONFIRMED or booking.check_out <= today:
+            raise HTTPException(status_code=409, detail="Only active confirmed bookings can be cancelled here")
+
+        booking.status = BookingStatus.CANCELLED
+        booking.cancelled_at = now_dt
+        booking.updated_at = now_dt
+        booking.awaiting_payment_expires_at = None
+        booking.awaiting_receipt_expires_at = None
+        booking.review_expires_at = None
+
+        payment_log = await get_payment_log(session, booking.id)
+        if payment_log:
+            payment_log.status = PaymentLogStatus.CANCELLED
+            payment_log.updated_at = now_dt
+
+        await session.commit()
+
+        return BookingActionResponse(
+            booking_id=booking.id,
+            status=booking.status.value,
+            expires_at=None,
+            message="Booking cancelled by admin",
         )
 
 

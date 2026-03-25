@@ -25,3 +25,20 @@ MANAGER_REMINDER_HOURS = int(os.getenv("MANAGER_REMINDER_HOURS", "4"))
 GUEST_PENDING_NOTIFY_HOURS = int(os.getenv("GUEST_PENDING_NOTIFY_HOURS", "12"))
 
 REAPER_INTERVAL_SEC = int(os.getenv("REAPER_INTERVAL_SEC", "30"))
+
+
+def parse_int_set(raw: str) -> set[int]:
+    out: set[int] = set()
+    for part in (raw or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            out.add(int(part))
+        except Exception:
+            continue
+    return out
+
+
+TG_BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+ADMIN_USER_IDS = parse_int_set(os.getenv("ADMIN_USER_IDS", ""))
