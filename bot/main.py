@@ -78,6 +78,176 @@ def parse_admin_user_ids(raw: str) -> set[int]:
 ADMIN_CHAT_ID = parse_admin_chat_id(ADMIN_CHAT_ID_RAW)
 ADMIN_USER_IDS = parse_admin_user_ids(ADMIN_USER_IDS_RAW)
 
+
+ADMIN_MESSAGES_PATH = os.path.join(os.path.dirname(__file__), "admin_messages.json")
+
+
+def load_admin_messages() -> dict:
+    try:
+        if not os.path.exists(ADMIN_MESSAGES_PATH):
+            return {}
+        with open(ADMIN_MESSAGES_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        logging.exception("Failed to load admin messages map")
+        return {}
+
+
+def save_admin_messages(data: dict) -> None:
+    try:
+        tmp_path = ADMIN_MESSAGES_PATH + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, ADMIN_MESSAGES_PATH)
+    except Exception:
+        logging.exception("Failed to save admin messages map")
+
+
+def remember_admin_message(booking_id: int, *, chat_id: int, message_id: int, kind: str) -> None:
+    data = load_admin_messages()
+    data[str(booking_id)] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "kind": kind,
+    }
+    save_admin_messages(data)
+
+
+def get_admin_message_ref(booking_id: int) -> dict | None:
+    data = load_admin_messages()
+    return data.get(str(booking_id))
+
+
+def forget_admin_message(booking_id: int) -> None:
+    data = load_admin_messages()
+    if str(booking_id) in data:
+        data.pop(str(booking_id), None)
+        save_admin_messages(data)
+
+
+async def send_or_replace_admin_booking_message(
+    *,
+    booking_id: int,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    file_type: str | None = None,
+    file_id: str | None = None,
+) -> None:
+    if not ADMIN_CHAT_ID:
+        return
+
+    old_ref = get_admin_message_ref(booking_id)
+    if old_ref:
+        try:
+            await bot.delete_message(
+                chat_id=old_ref["chat_id"],
+                message_id=old_ref["message_id"],
+            )
+        except Exception:
+            logging.exception("Failed to delete previous admin booking message")
+
+    try:
+        if file_type == "photo" and file_id:
+            msg = await bot.send_photo(
+                ADMIN_CHAT_ID,
+                photo=file_id,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+            remember_admin_message(
+                booking_id,
+                chat_id=ADMIN_CHAT_ID,
+                message_id=msg.message_id,
+                kind="photo",
+            )
+            return
+
+        if file_type == "document" and file_id:
+            msg = await bot.send_document(
+                ADMIN_CHAT_ID,
+                document=file_id,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+            remember_admin_message(
+                booking_id,
+                chat_id=ADMIN_CHAT_ID,
+                message_id=msg.message_id,
+                kind="document",
+            )
+            return
+
+        msg = await bot.send_message(
+            ADMIN_CHAT_ID,
+            text,
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+        )
+        remember_admin_message(
+            booking_id,
+            chat_id=ADMIN_CHAT_ID,
+            message_id=msg.message_id,
+            kind="text",
+        )
+    except Exception:
+        logging.exception("Failed to send/rewrite admin booking message")
+
+
+async def edit_admin_booking_message(
+    *,
+    booking_id: int,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> bool:
+    ref = get_admin_message_ref(booking_id)
+    if not ref:
+        return False
+
+    try:
+        kind = ref.get("kind")
+        if kind == "text":
+            await bot.edit_message_text(
+                text=text,
+                chat_id=ref["chat_id"],
+                message_id=ref["message_id"],
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+        else:
+            await bot.edit_message_caption(
+                caption=text,
+                chat_id=ref["chat_id"],
+                message_id=ref["message_id"],
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+        return True
+    except Exception:
+        logging.exception("Failed to edit admin booking message")
+        return False
+
+
+def replace_status_line(text: str, new_status: str) -> str:
+    if not text:
+        return f"📌 Статус: {new_status}"
+
+    lines = text.splitlines()
+    replaced = False
+
+    for i, line in enumerate(lines):
+        if line.startswith("📌 Статус:"):
+            lines[i] = f"📌 Статус: {new_status}"
+            replaced = True
+            break
+
+    if not replaced:
+        lines.append(f"📌 Статус: {new_status}")
+
+    return "\n".join(lines)
+
+
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
@@ -105,12 +275,12 @@ def contact_url(username: str) -> str:
 def mention_user(name: str | None, username: str | None, tg_user_id: int | None) -> str:
     safe_name = html.escape(name or "Гость")
 
+    if tg_user_id and int(tg_user_id) > 0:
+        return f'<a href="tg://user?id={int(tg_user_id)}">{safe_name}</a>'
+
     if username:
         safe_username = html.escape(username.lstrip("@"))
         return f'<a href="https://t.me/{safe_username}">{safe_name}</a>'
-
-    if tg_user_id and int(tg_user_id) > 0:
-        return f'<a href="tg://user?id={int(tg_user_id)}">{safe_name}</a>'
 
     return safe_name
 
@@ -452,11 +622,9 @@ async def notify_admin_new_booking(*, guest_tg_user_id: int, guest_name: str | N
     )
 
     try: 
-        await bot.send_message(
-            ADMIN_CHAT_ID,
-            text,
-            parse_mode="HTML",
-            link_preview_options=no_preview(),
+        await send_or_replace_admin_booking_message(
+            booking_id=created["booking_id"],
+            text=text,
         )
     except Exception:
         logging.exception("Failed to notify admin about new booking")
@@ -518,39 +686,40 @@ async def notify_admin_receipt(*, guest_tg_user_id: int, guest_name: str | None,
         "Чек: <b>прикреплён</b>"
     )
 
-    try:
-        if file_type == "photo":
-            await bot.send_photo(
-                ADMIN_CHAT_ID,
-                photo=file_id,
-                caption=caption,
-                parse_mode="HTML",
-                reply_markup=admin_payment_kb(item["booking_id"], guest_tg_user_id),
-            )
-        else:
-            await bot.send_document(
-                ADMIN_CHAT_ID,
-                document=file_id,
-                caption=caption,
-                parse_mode="HTML",
-                reply_markup=admin_payment_kb(item["booking_id"], guest_tg_user_id),
-            )
-    except Exception:
-        logging.exception("Failed to notify admin about receipt")
-
+try:
+    await send_or_replace_admin_booking_message(
+        booking_id=item["booking_id"],
+        text=caption,
+        reply_markup=admin_payment_kb(item["booking_id"], guest_tg_user_id),
+        file_type=file_type,
+        file_id=file_id,
+    )
+except Exception:
+    logging.exception("Failed to notify admin about receipt")
 
 async def notify_admin_cancel(*, guest_tg_user_id: int, booking_id: int):
     if not ADMIN_CHAT_ID:
         return
-    try:
-        await bot.send_message(
-            ADMIN_CHAT_ID,
-            f"❌ <b>Бронь отменена гостем</b>\n\n🆔 Бронь: <code>{booking_id}</code>\n👤 tg_user_id: <code>{guest_tg_user_id}</code>",
-            parse_mode="HTML",
-            link_preview_options=no_preview(),
+
+    text = (
+        "❌ <b>Бронь отменена гостем</b>\n\n"
+        f"🆔 Бронь: <code>{booking_id}</code>\n"
+        f"👤 tg_user_id: <code>{guest_tg_user_id}</code>\n"
+        "📌 Статус: Бронь отменена"
+    )
+
+    updated = await edit_admin_booking_message(
+        booking_id=booking_id,
+        text=text,
+        reply_markup=None,
+    )
+
+    if not updated:
+        await send_or_replace_admin_booking_message(
+            booking_id=booking_id,
+            text=text,
+            reply_markup=None,
         )
-    except Exception:
-        logging.exception("Failed to notify admin about cancellation")
 
 
 @dp.message(CommandStart())
@@ -1085,6 +1254,25 @@ async def on_receipt_document(message: Message, state: FSMContext):
     )
 
 
+def replace_status_line(text: str, new_status: str) -> str:
+    if not text:
+        return f"📌 Статус: <b>{new_status}</b>"
+
+    lines = text.splitlines()
+    replaced = False
+
+    for i, line in enumerate(lines):
+        if line.startswith("📌 Статус:"):
+            lines[i] = f"📌 Статус: <b>{new_status}</b>"
+            replaced = True
+            break
+
+    if not replaced:
+        lines.append(f"📌 Статус: <b>{new_status}</b>")
+
+    return "\n".join(lines)
+
+
 @dp.callback_query(F.data.startswith("adm:confirm:") | F.data.startswith("adm:reject:"))
 async def admin_action(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -1114,16 +1302,26 @@ async def admin_action(callback: CallbackQuery):
             await callback.message.answer(f"Ошибка:\n{e}")
             return
 
+        current_text = callback.message.caption or callback.message.text or ""
+        updated_text = replace_status_line(current_text, "Бронь подтверждена")
+
         try:
-            await callback.message.edit_reply_markup(reply_markup=None)
+            if callback.message.photo or callback.message.document:
+                await callback.message.edit_caption(
+                    caption=updated_text,
+                    parse_mode="HTML",
+                    reply_markup=None,
+                )
+            else:
+                await callback.message.edit_text(
+                    updated_text,
+                    parse_mode="HTML",
+                    reply_markup=None,
+                )
         except Exception:
-            pass
+            logging.exception("Failed to update admin message after confirm")
 
         await callback.answer("Подтверждено")
-        await callback.message.answer(
-            f"✅ Бронь <code>{booking_id}</code> подтверждена.",
-            parse_mode="HTML",
-        )
 
         try:
             await bot.send_message(
@@ -1154,16 +1352,26 @@ async def admin_action(callback: CallbackQuery):
             await callback.message.answer(f"Ошибка:\n{e}")
             return
 
+        current_text = callback.message.caption or callback.message.text or ""
+        updated_text = replace_status_line(current_text, "Бронь отклонена")
+
         try:
-            await callback.message.edit_reply_markup(reply_markup=None)
+            if callback.message.photo or callback.message.document:
+                await callback.message.edit_caption(
+                    caption=updated_text,
+                    parse_mode="HTML",
+                    reply_markup=None,
+                )
+            else:
+                await callback.message.edit_text(
+                    updated_text,
+                    parse_mode="HTML",
+                    reply_markup=None,
+                )
         except Exception:
-            pass
+            logging.exception("Failed to update admin message after reject")
 
         await callback.answer("Отклонено")
-        await callback.message.answer(
-            f"❌ Бронь <code>{booking_id}</code> отклонена.",
-            parse_mode="HTML",
-        )
 
         try:
             await bot.send_message(
