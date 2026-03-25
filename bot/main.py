@@ -15,8 +15,8 @@ from aiogram.types import (
     BufferedInputFile,
     CallbackQuery,
     FSInputFile,
-    InlineKeyboardMarkup,
     InlineKeyboardButton,
+    InlineKeyboardMarkup,
     KeyboardButton,
     LinkPreviewOptions,
     Message,
@@ -77,6 +77,8 @@ def parse_admin_user_ids(raw: str) -> set[int]:
 
 ADMIN_CHAT_ID = parse_admin_chat_id(ADMIN_CHAT_ID_RAW)
 ADMIN_USER_IDS = parse_admin_user_ids(ADMIN_USER_IDS_RAW)
+
+ADMIN_MESSAGES_PATH = os.path.join(os.path.dirname(__file__), "admin_messages.json")
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -233,6 +235,49 @@ def admin_ui_to_api_group(group: str) -> str:
     return mapping.get(group, group)
 
 
+def load_admin_messages() -> dict:
+    try:
+        if not os.path.exists(ADMIN_MESSAGES_PATH):
+            return {}
+        with open(ADMIN_MESSAGES_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        logging.exception("Failed to load admin messages map")
+        return {}
+
+
+def save_admin_messages(data: dict) -> None:
+    try:
+        tmp_path = ADMIN_MESSAGES_PATH + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, ADMIN_MESSAGES_PATH)
+    except Exception:
+        logging.exception("Failed to save admin messages map")
+
+
+def remember_admin_message(booking_id: int, *, chat_id: int, message_id: int, kind: str) -> None:
+    data = load_admin_messages()
+    data[str(booking_id)] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "kind": kind,
+    }
+    save_admin_messages(data)
+
+
+def get_admin_message_ref(booking_id: int) -> dict | None:
+    data = load_admin_messages()
+    return data.get(str(booking_id))
+
+
+def forget_admin_message(booking_id: int) -> None:
+    data = load_admin_messages()
+    if str(booking_id) in data:
+        data.pop(str(booking_id), None)
+        save_admin_messages(data)
+
+
 def replace_status_line(text: str, new_status: str) -> str:
     if not text:
         return f"📌 Статус: <b>{new_status}</b>"
@@ -250,6 +295,111 @@ def replace_status_line(text: str, new_status: str) -> str:
         lines.append(f"📌 Статус: <b>{new_status}</b>")
 
     return "\n".join(lines)
+
+
+async def send_or_replace_admin_booking_message(
+    *,
+    booking_id: int,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    file_type: str | None = None,
+    file_id: str | None = None,
+) -> None:
+    if not ADMIN_CHAT_ID:
+        return
+
+    old_ref = get_admin_message_ref(booking_id)
+    if old_ref:
+        try:
+            await bot.delete_message(
+                chat_id=old_ref["chat_id"],
+                message_id=old_ref["message_id"],
+            )
+        except Exception:
+            logging.exception("Failed to delete previous admin booking message")
+
+    try:
+        if file_type == "photo" and file_id:
+            msg = await bot.send_photo(
+                ADMIN_CHAT_ID,
+                photo=file_id,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+            remember_admin_message(
+                booking_id,
+                chat_id=ADMIN_CHAT_ID,
+                message_id=msg.message_id,
+                kind="photo",
+            )
+            return
+
+        if file_type == "document" and file_id:
+            msg = await bot.send_document(
+                ADMIN_CHAT_ID,
+                document=file_id,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+            remember_admin_message(
+                booking_id,
+                chat_id=ADMIN_CHAT_ID,
+                message_id=msg.message_id,
+                kind="document",
+            )
+            return
+
+        msg = await bot.send_message(
+            ADMIN_CHAT_ID,
+            text,
+            parse_mode="HTML",
+            link_preview_options=no_preview(),
+            reply_markup=reply_markup,
+        )
+        remember_admin_message(
+            booking_id,
+            chat_id=ADMIN_CHAT_ID,
+            message_id=msg.message_id,
+            kind="text",
+        )
+    except Exception:
+        logging.exception("Failed to send or replace admin booking message")
+
+
+async def edit_admin_booking_message(
+    *,
+    booking_id: int,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> bool:
+    ref = get_admin_message_ref(booking_id)
+    if not ref:
+        return False
+
+    try:
+        kind = ref.get("kind")
+        if kind == "text":
+            await bot.edit_message_text(
+                text=text,
+                chat_id=ref["chat_id"],
+                message_id=ref["message_id"],
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+        else:
+            await bot.edit_message_caption(
+                caption=text,
+                chat_id=ref["chat_id"],
+                message_id=ref["message_id"],
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+        return True
+    except Exception:
+        logging.exception("Failed to edit admin booking message")
+        return False
 
 
 async def api_post(path: str, payload: dict) -> dict:
@@ -449,7 +599,15 @@ async def get_booking_item_for_user(tg_user_id: int, booking_id: int) -> dict | 
     return None
 
 
-async def notify_admin_new_booking(*, guest_tg_user_id: int, guest_name: str | None, guest_username: str | None, phone: str, created: dict, booking_data: dict):
+async def notify_admin_new_booking(
+    *,
+    guest_tg_user_id: int,
+    guest_name: str | None,
+    guest_username: str | None,
+    phone: str,
+    created: dict,
+    booking_data: dict,
+):
     if not ADMIN_CHAT_ID:
         return
 
@@ -471,51 +629,24 @@ async def notify_admin_new_booking(*, guest_tg_user_id: int, guest_name: str | N
     )
 
     try:
-        await bot.send_message(
-            ADMIN_CHAT_ID,
-            text,
-            parse_mode="HTML",
-            link_preview_options=no_preview(),
+        await send_or_replace_admin_booking_message(
+            booking_id=created["booking_id"],
+            text=text,
         )
     except Exception:
         logging.exception("Failed to notify admin about new booking")
 
 
-async def notify_admin_payment_marked(*, guest_tg_user_id: int, guest_name: str | None, guest_username: str | None, phone: str, item: dict):
-    if not ADMIN_CHAT_ID:
-        return
-
-    user_ref = mention_user(guest_name, guest_username, guest_tg_user_id)
-
-    text = (
-        "💳 <b>Гость отметил оплату</b>\n\n"
-        f"🆔 Бронь: <code>{item['booking_id']}</code>\n"
-        f"👤 Гость: {user_ref}\n"
-        f"📱 Телефон: <code>{html.escape(phone)}</code>\n"
-        f"🏠 Вариант: <b>{html.escape(item['unit_title'])}</b> — <b>{html.escape(item['tariff_title'])}</b>\n"
-        f"📅 Даты: <b>{item['check_in']} — {item['check_out']}</b>\n"
-        f"👨 Взрослые: {item['adults']}\n"
-        f"🧒 Дети: {item['children']}\n"
-        f"➕ Доп. места: {item.get('extra_bed_count', 0)}\n"
-        f"💰 Итого: <b>{item['total_amount']} ₽</b>\n"
-        f"🔻 Предоплата: <b>{item['prepay_amount']} ₽</b>\n"
-        f"📌 Статус: <b>{status_label(item['status'])}</b>\n\n"
-        "Чек: <b>не прикреплён</b>"
-    )
-
-    try:
-        await bot.send_message(
-            ADMIN_CHAT_ID,
-            text,
-            parse_mode="HTML",
-            reply_markup=admin_payment_kb(item["booking_id"], guest_tg_user_id),
-            link_preview_options=no_preview(),
-        )
-    except Exception:
-        logging.exception("Failed to notify admin about payment mark")
-
-
-async def notify_admin_receipt(*, guest_tg_user_id: int, guest_name: str | None, guest_username: str | None, phone: str, item: dict, file_type: str, file_id: str):
+async def notify_admin_receipt(
+    *,
+    guest_tg_user_id: int,
+    guest_name: str | None,
+    guest_username: str | None,
+    phone: str,
+    item: dict,
+    file_type: str,
+    file_id: str,
+):
     if not ADMIN_CHAT_ID:
         return
 
@@ -538,22 +669,13 @@ async def notify_admin_receipt(*, guest_tg_user_id: int, guest_name: str | None,
     )
 
     try:
-        if file_type == "photo":
-            await bot.send_photo(
-                ADMIN_CHAT_ID,
-                photo=file_id,
-                caption=caption,
-                parse_mode="HTML",
-                reply_markup=admin_payment_kb(item["booking_id"], guest_tg_user_id),
-            )
-        else:
-            await bot.send_document(
-                ADMIN_CHAT_ID,
-                document=file_id,
-                caption=caption,
-                parse_mode="HTML",
-                reply_markup=admin_payment_kb(item["booking_id"], guest_tg_user_id),
-            )
+        await send_or_replace_admin_booking_message(
+            booking_id=item["booking_id"],
+            text=caption,
+            reply_markup=admin_payment_kb(item["booking_id"], guest_tg_user_id),
+            file_type=file_type,
+            file_id=file_id,
+        )
     except Exception:
         logging.exception("Failed to notify admin about receipt")
 
@@ -561,15 +683,28 @@ async def notify_admin_receipt(*, guest_tg_user_id: int, guest_name: str | None,
 async def notify_admin_cancel(*, guest_tg_user_id: int, booking_id: int):
     if not ADMIN_CHAT_ID:
         return
-    try:
-        await bot.send_message(
-            ADMIN_CHAT_ID,
-            f"❌ <b>Бронь отменена гостем</b>\n\n🆔 Бронь: <code>{booking_id}</code>\n👤 tg_user_id: <code>{guest_tg_user_id}</code>",
-            parse_mode="HTML",
-            link_preview_options=no_preview(),
-        )
-    except Exception:
-        logging.exception("Failed to notify admin about cancellation")
+
+    text = (
+        "❌ <b>Бронь отменена гостем</b>\n\n"
+        f"🆔 Бронь: <code>{booking_id}</code>\n"
+        f"👤 tg_user_id: <code>{guest_tg_user_id}</code>\n"
+        "📌 Статус: <b>Бронь отменена</b>"
+    )
+
+    updated = await edit_admin_booking_message(
+        booking_id=booking_id,
+        text=text,
+        reply_markup=None,
+    )
+
+    if not updated:
+        try:
+            await send_or_replace_admin_booking_message(
+                booking_id=booking_id,
+                text=text,
+            )
+        except Exception:
+            logging.exception("Failed to notify admin about cancellation")
 
 
 @dp.message(CommandStart())
@@ -897,7 +1032,7 @@ async def on_contact(message: Message, state: FSMContext):
 
 
 @dp.callback_query(F.data.startswith("cancel:"))
-async def cancel_booking(callback: CallbackQuery):
+async def cancel_booking(callback: CallbackQuery, state: FSMContext):
     booking_id = int(callback.data.split(":")[1])
 
     try:
@@ -912,6 +1047,10 @@ async def cancel_booking(callback: CallbackQuery):
         await callback.answer("Не удалось отменить бронь", show_alert=True)
         await callback.message.answer(f"Ошибка отмены:\n{e}")
         return
+
+    state_data = await state.get_data()
+    if state_data.get("receipt_booking_id") == booking_id:
+        await state.update_data(receipt_booking_id=None)
 
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
@@ -932,7 +1071,7 @@ async def cancel_booking(callback: CallbackQuery):
 
 
 @dp.callback_query(F.data.startswith("paid:"))
-async def paid_click(callback: CallbackQuery):
+async def paid_click(callback: CallbackQuery, state: FSMContext):
     booking_id = int(callback.data.split(":")[1])
 
     try:
@@ -947,6 +1086,8 @@ async def paid_click(callback: CallbackQuery):
         await callback.answer("Не удалось отметить оплату", show_alert=True)
         await callback.message.answer(f"Ошибка:\n{e}")
         return
+
+    await state.update_data(receipt_booking_id=booking_id)
 
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
@@ -964,24 +1105,46 @@ async def paid_click(callback: CallbackQuery):
     )
 
 
-async def find_receipt_target(tg_user_id: int) -> dict | None:
+async def find_receipt_target(tg_user_id: int, preferred_booking_id: int | None = None) -> dict | None:
     data = await api_post("/api/v2/bookings/active", {"tg_user_id": tg_user_id})
     items = data.get("items", [])
-    for item in items:
-        if item["status"] in ("AWAITING_RECEIPT", "PENDING_REVIEW"):
-            return item
+
+    candidates = [
+        item for item in items
+        if item["status"] in ("AWAITING_RECEIPT", "PENDING_REVIEW")
+    ]
+
+    if preferred_booking_id is not None:
+        for item in candidates:
+            if int(item["booking_id"]) == int(preferred_booking_id):
+                return item
+        return None
+
+    if len(candidates) == 1:
+        return candidates[0]
+
     return None
 
 
 @dp.message(F.photo)
-async def on_receipt_photo(message: Message):
+async def on_receipt_photo(message: Message, state: FSMContext):
+    state_data = await state.get_data()
+    preferred_booking_id = state_data.get("receipt_booking_id")
+
     try:
-        target = await find_receipt_target(message.from_user.id)
+        target = await find_receipt_target(message.from_user.id, preferred_booking_id)
     except Exception as e:
         await message.answer(f"Не удалось проверить брони:\n{e}", reply_markup=main_kb())
         return
 
     if not target:
+        if preferred_booking_id is not None:
+            await state.update_data(receipt_booking_id=None)
+            await message.answer(
+                "Не удалось определить бронь, к которой нужно прикрепить чек.\n"
+                "Откройте «📅 Мои брони» и нажмите «✅ Я оплатил(а)» у нужной брони ещё раз.",
+                reply_markup=main_kb(),
+            )
         return
 
     try:
@@ -995,6 +1158,8 @@ async def on_receipt_photo(message: Message):
     except Exception as e:
         await message.answer(f"Не удалось прикрепить чек:\n{e}", reply_markup=main_kb())
         return
+
+    await state.update_data(receipt_booking_id=None)
 
     await notify_admin_receipt(
         guest_tg_user_id=message.from_user.id,
@@ -1016,14 +1181,24 @@ async def on_receipt_photo(message: Message):
 
 
 @dp.message(F.document)
-async def on_receipt_document(message: Message):
+async def on_receipt_document(message: Message, state: FSMContext):
+    state_data = await state.get_data()
+    preferred_booking_id = state_data.get("receipt_booking_id")
+
     try:
-        target = await find_receipt_target(message.from_user.id)
+        target = await find_receipt_target(message.from_user.id, preferred_booking_id)
     except Exception as e:
         await message.answer(f"Не удалось проверить брони:\n{e}", reply_markup=main_kb())
         return
 
     if not target:
+        if preferred_booking_id is not None:
+            await state.update_data(receipt_booking_id=None)
+            await message.answer(
+                "Не удалось определить бронь, к которой нужно прикрепить чек.\n"
+                "Откройте «📅 Мои брони» и нажмите «✅ Я оплатил(а)» у нужной брони ещё раз.",
+                reply_markup=main_kb(),
+            )
         return
 
     try:
@@ -1037,6 +1212,8 @@ async def on_receipt_document(message: Message):
     except Exception as e:
         await message.answer(f"Не удалось прикрепить чек:\n{e}", reply_markup=main_kb())
         return
+
+    await state.update_data(receipt_booking_id=None)
 
     await notify_admin_receipt(
         guest_tg_user_id=message.from_user.id,
