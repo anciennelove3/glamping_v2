@@ -21,6 +21,7 @@ from aiogram.types import (
     Message,
     ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
+    LinkPreviewOptions,
     WebAppInfo,
 )
 from dotenv import load_dotenv
@@ -87,6 +88,10 @@ class BookingFlow(StatesGroup):
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_USER_IDS
+
+
+def no_preview() -> LinkPreviewOptions:
+    return LinkPreviewOptions(is_disabled=True)
 
 
 def contact_url(username: str) -> str:
@@ -446,8 +451,13 @@ async def notify_admin_new_booking(*, guest_tg_user_id: int, guest_name: str | N
         f"📌 Статус: <b>{status_label(created['status'])}</b>"
     )
 
-    try:
-        await bot.send_message(ADMIN_CHAT_ID, text, parse_mode="HTML")
+    try: 
+        await bot.send_message(
+            ADMIN_CHAT_ID,
+            text,
+            parse_mode="HTML",
+            link_preview_options=no_preview(),
+        )
     except Exception:
         logging.exception("Failed to notify admin about new booking")
 
@@ -480,7 +490,8 @@ async def notify_admin_payment_marked(*, guest_tg_user_id: int, guest_name: str 
             text,
             parse_mode="HTML",
             reply_markup=admin_payment_kb(item["booking_id"], guest_tg_user_id),
-        )
+            link_preview_options=no_preview(),
+        )   
     except Exception:
         logging.exception("Failed to notify admin about payment mark")
 
@@ -536,6 +547,7 @@ async def notify_admin_cancel(*, guest_tg_user_id: int, booking_id: int):
             ADMIN_CHAT_ID,
             f"❌ <b>Бронь отменена гостем</b>\n\n🆔 Бронь: <code>{booking_id}</code>\n👤 tg_user_id: <code>{guest_tg_user_id}</code>",
             parse_mode="HTML",
+            link_preview_options=no_preview(),
         )
     except Exception:
         logging.exception("Failed to notify admin about cancellation")
@@ -930,14 +942,8 @@ async def paid_click(callback: CallbackQuery, state: FSMContext):
     except Exception:
         pass
 
-    if item:
-        await notify_admin_payment_marked(
-            guest_tg_user_id=callback.from_user.id,
-            guest_name=callback.from_user.full_name,
-            guest_username=callback.from_user.username,
-            phone="не указан в уведомлении",
-            item=item,
-        )
+# Шум не создаём: отдельное админ-уведомление о нажатии "Я оплатил"
+# не отправляем. Админ увидит бронь в панели, а чек придёт отдельным сообщением.
 
     await callback.answer("Отмечено")
     await callback.message.answer(
