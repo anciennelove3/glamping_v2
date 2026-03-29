@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from urllib.parse import parse_qsl
 from zoneinfo import ZoneInfo
 
+import aiohttp
 from fastapi import FastAPI, Header, HTTPException
 from sqlalchemy import and_, func, or_, select, update
 
@@ -48,6 +49,7 @@ from .schemas import (
     AdminBookingItem,
     AdminBookingsListRequest,
     AdminBookingsListResponse,
+    AdminWebappCancelRequest,
     AdminWebappListRequest,
     BookingActionResponse,
     CalculateBookingRequest,
@@ -69,6 +71,8 @@ from .schemas import (
 from .seed import seed_if_needed
 
 app = FastAPI(title=APP_TITLE)
+
+ADMIN_MESSAGES_PATH = "/root/glamping_v2/bot/admin_messages.json"
 
 
 def now_utc() -> datetime:
@@ -381,6 +385,176 @@ def require_admin_user(telegram_init_data: str | None) -> int:
         raise HTTPException(status_code=403, detail="Admin access denied")
 
     return user_id
+
+
+def _load_admin_message_ref(booking_id: int) -> dict | None:
+    try:
+        with open(ADMIN_MESSAGES_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get(str(booking_id))
+    except Exception:
+        return None
+
+
+def _save_admin_message_ref(booking_id: int, ref: dict) -> None:
+    try:
+        try:
+            with open(ADMIN_MESSAGES_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+
+        data[str(booking_id)] = ref
+
+        with open(ADMIN_MESSAGES_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+async def _telegram_api_call(method: str, payload: dict) -> tuple[bool, dict | None]:
+    if not TG_BOT_TOKEN:
+        return False, None
+
+    url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/{method}"
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=payload) as resp:
+                data = await resp.json(content_type=None)
+                return resp.status == 200 and bool(data.get("ok")), data
+    except Exception:
+        return False, None
+
+
+def _admin_cancelled_text(
+    *,
+    booking_id: int,
+    unit_title: str,
+    tariff_title: str,
+    check_in: str,
+    check_out: str,
+    adults: int,
+    children: int,
+    extra_bed_count: int,
+    total_amount: int,
+    prepay_amount: int,
+) -> str:
+    return (
+        "❌ <b>Бронь отменена администратором</b>\n\n"
+        f"🆔 Бронь: <code>{booking_id}</code>\n"
+        f"🏠 Вариант: <b>{unit_title}</b> — <b>{tariff_title}</b>\n"
+        f"📅 Даты: <b>{check_in} — {check_out}</b>\n"
+        f"👨 Взрослые: {adults}\n"
+        f"🧒 Дети: {children}\n"
+        f"➕ Доп. места: {extra_bed_count}\n"
+        f"💰 Итого: <b>{total_amount} ₽</b>\n"
+        f"🔻 Предоплата: <b>{prepay_amount} ₽</b>\n"
+        f"📌 Статус: <b>Бронь отменена администратором</b>"
+    )
+
+
+async def update_admin_chat_booking_cancelled(
+    *,
+    booking_id: int,
+    unit_title: str,
+    tariff_title: str,
+    check_in: str,
+    check_out: str,
+    adults: int,
+    children: int,
+    extra_bed_count: int,
+    total_amount: int,
+    prepay_amount: int,
+) -> None:
+    ref = _load_admin_message_ref(booking_id)
+    if not ref:
+        return
+
+    chat_id = ref.get("chat_id")
+    message_id = ref.get("message_id")
+
+    if not chat_id or not message_id:
+        return
+
+    text = _admin_cancelled_text(
+        booking_id=booking_id,
+        unit_title=unit_title,
+        tariff_title=tariff_title,
+        check_in=check_in,
+        check_out=check_out,
+        adults=adults,
+        children=children,
+        extra_bed_count=extra_bed_count,
+        total_amount=total_amount,
+        prepay_amount=prepay_amount,
+    )
+
+    await _telegram_api_call(
+        "deleteMessage",
+        {
+            "chat_id": chat_id,
+            "message_id": message_id,
+        },
+    )
+
+    ok, result = await _telegram_api_call(
+        "sendMessage",
+        {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+        },
+    )
+
+    if ok and isinstance(result, dict):
+        msg = result.get("result") or {}
+        new_message_id = msg.get("message_id")
+        if new_message_id:
+            _save_admin_message_ref(
+                booking_id,
+                {
+                    "chat_id": chat_id,
+                    "message_id": new_message_id,
+                    "kind": "text",
+                },
+            )
+
+
+async def notify_guest_booking_cancelled_by_admin(
+    *,
+    tg_user_id: int,
+    booking_id: int,
+    unit_title: str,
+    check_in: str,
+    check_out: str,
+):
+    if not TG_BOT_TOKEN or not tg_user_id:
+        return
+
+    text = (
+        "❌ <b>Ваша бронь была отменена администратором.</b>\n\n"
+        f"🆔 Номер брони: <code>{booking_id}</code>\n"
+        f"🏠 Домик: <b>{unit_title}</b>\n"
+        f"📅 Даты: <b>{check_in} — {check_out}</b>\n\n"
+        "Если это произошло по ошибке или нужна помощь — свяжитесь с нами."
+    )
+
+    url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": tg_user_id,
+        "text": text,
+        "parse_mode": "HTML",
+    }
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=payload) as resp:
+                await resp.text()
+    except Exception:
+        pass
 
 
 async def expire_stale_bookings() -> dict[str, int]:
@@ -1171,7 +1345,7 @@ async def admin_webapp_list_bookings(
 
 @app.post("/api/v2/admin/webapp/bookings/cancel", response_model=BookingActionResponse)
 async def admin_webapp_cancel_booking(
-    req: AdminBookingActionRequest,
+    req: AdminWebappCancelRequest,
     x_telegram_init_data: str | None = Header(default=None),
 ):
     require_admin_user(x_telegram_init_data)
@@ -1179,11 +1353,18 @@ async def admin_webapp_cancel_booking(
     today = today_local_date()
 
     async with SessionLocal() as session:
-        q = await session.execute(select(Booking).where(Booking.id == req.booking_id))
-        booking = q.scalar_one_or_none()
+        q = await session.execute(
+            select(Booking, Unit, Tariff)
+            .join(Unit, Unit.id == Booking.unit_id)
+            .join(Tariff, Tariff.id == Booking.tariff_id)
+            .where(Booking.id == req.booking_id)
+        )
+        row = q.first()
 
-        if not booking:
+        if not row:
             raise HTTPException(status_code=404, detail="Booking not found")
+
+        booking, unit, tariff = row
 
         if booking.status in (BookingStatus.CANCELLED, BookingStatus.EXPIRED, BookingStatus.COMPLETED):
             return BookingActionResponse(
@@ -1208,14 +1389,47 @@ async def admin_webapp_cancel_booking(
             payment_log.status = PaymentLogStatus.CANCELLED
             payment_log.updated_at = now_dt
 
+        tg_user_id = booking.tg_user_id
+        booking_id = booking.id
+        unit_title = unit.title
+        tariff_title = tariff.title
+        check_in = booking.check_in.isoformat()
+        check_out = booking.check_out.isoformat()
+        adults = booking.adults
+        children = booking.children
+        extra_bed_count = booking.extra_bed_count
+        total_amount = booking.total_amount
+        prepay_amount = booking.prepay_amount
+
         await session.commit()
 
-        return BookingActionResponse(
-            booking_id=booking.id,
-            status=booking.status.value,
-            expires_at=None,
-            message="Booking cancelled by admin",
-        )
+    await update_admin_chat_booking_cancelled(
+        booking_id=booking_id,
+        unit_title=unit_title,
+        tariff_title=tariff_title,
+        check_in=check_in,
+        check_out=check_out,
+        adults=adults,
+        children=children,
+        extra_bed_count=extra_bed_count,
+        total_amount=total_amount,
+        prepay_amount=prepay_amount,
+    )
+
+    await notify_guest_booking_cancelled_by_admin(
+        tg_user_id=tg_user_id,
+        booking_id=booking_id,
+        unit_title=unit_title,
+        check_in=check_in,
+        check_out=check_out,
+    )
+
+    return BookingActionResponse(
+        booking_id=booking_id,
+        status=BookingStatus.CANCELLED.value,
+        expires_at=None,
+        message="Booking cancelled by admin",
+    )
 
 
 @app.post("/api/v2/internal/reaper/run-now", response_model=ReaperRunResponse)

@@ -787,13 +787,26 @@ async def start(message: Message, state: FSMContext):
 
 
 @dp.message(Command("admin"))
-async def admin_panel(message: Message):
+async def admin_panel(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         await message.answer("⛔ Доступ запрещён.", reply_markup=main_kb())
         return
 
-    text = "🛠 <b>Админ-панель</b>\n\nВыберите раздел ниже:"
-    await message.answer(text, parse_mode="HTML", reply_markup=admin_panel_kb())
+    await state.clear()
+
+    if not ADMIN_WEBAPP_URL:
+        await message.answer("ADMIN_WEBAPP_URL не задан.", reply_markup=main_kb())
+        return
+
+    text = (
+        "🛠 <b>Админка бронирований</b>\n\n"
+        "Нажми кнопку ниже, чтобы открыть панель управления текущими бронями."
+    )
+    await message.answer(
+        text,
+        parse_mode="HTML",
+        reply_markup=admin_webapp_kb(),
+    )
 
 
 @dp.callback_query(F.data == "adm:panel")

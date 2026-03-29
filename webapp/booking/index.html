@@ -324,12 +324,12 @@
           <select id="adults"></select>
         </div>
 
-        <div>
+        <div id="childrenBlock">
           <label for="children">Дети</label>
           <select id="children"></select>
         </div>
 
-        <div>
+        <div id="extraBedBlock">
           <label for="extraBed">Доп. места для детей</label>
           <select id="extraBed"></select>
         </div>
@@ -337,11 +337,13 @@
         <div>
           <label for="checkIn">Заезд</label>
           <input id="checkIn" type="text" placeholder="YYYY-MM-DD" readonly>
+          <div id="checkInMeta" class="muted" style="margin-top:6px;">Время заезда: —</div>
         </div>
 
         <div>
           <label for="checkOut">Выезд</label>
           <input id="checkOut" type="text" placeholder="YYYY-MM-DD" readonly>
+          <div id="checkOutMeta" class="muted" style="margin-top:6px;">Время выезда: —</div>
         </div>
       </div>
 
@@ -371,6 +373,25 @@
     }
 
     const $ = (id) => document.getElementById(id);
+
+    const UNIT_META = {
+      1: {
+        title: 'Дом "Треугольный"',
+        check_in_time: "15:00",
+        check_out_time: "12:00",
+        max_adults: 2,
+        max_children: 3,
+        max_total_guests: 5
+      },
+      2: {
+        title: 'Мини-дом "Скворечник"',
+        check_in_time: "15:30",
+        check_out_time: "12:30",
+        max_adults: 2,
+        max_children: 0,
+        max_total_guests: 2
+      }
+    };
 
     let units = [];
     let tariffs = [];
@@ -446,8 +467,35 @@
       return formatDateLocal(dt);
     }
 
+    function enrichUnit(unit) {
+      const meta = UNIT_META[unit.id];
+      if (!meta) return unit;
+
+      return {
+        ...unit,
+        title: meta.title,
+        check_in_time: meta.check_in_time,
+        check_out_time: meta.check_out_time,
+        max_adults: meta.max_adults,
+        max_children: meta.max_children,
+        max_total_guests: meta.max_total_guests
+      };
+    }
+
     function getSelectedUnit() {
       return units.find(u => u.id === selectedUnitId) || null;
+    }
+
+    function updateStayTimeNotes() {
+      const unit = getSelectedUnit();
+
+      $("checkInMeta").textContent = unit?.check_in_time
+        ? `Время заезда: с ${unit.check_in_time}`
+        : "Время заезда: —";
+
+      $("checkOutMeta").textContent = unit?.check_out_time
+        ? `Время выезда: до ${unit.check_out_time}`
+        : "Время выезда: —";
     }
 
     function renderUnits() {
@@ -465,6 +513,9 @@
             <div style="margin-top:10px" class="muted">
               Макс. гостей: ${unit.max_total_guests} • Взрослых: до ${unit.max_adults} • Детей: до ${unit.max_children}
             </div>
+            <div style="margin-top:8px" class="muted">
+              Заезд: с ${unit.check_in_time || "—"} • Выезд: до ${unit.check_out_time || "—"}
+            </div>
           </div>
         `;
         div.addEventListener("click", async () => {
@@ -472,6 +523,7 @@
           selectedUnitId = unit.id;
           renderUnits();
           updateGuestControls();
+          updateStayTimeNotes();
           resetCalculationState("Домик выбран. Обновляем доступные даты…");
           await refreshUnavailableAndCalendars();
         });
@@ -495,7 +547,16 @@
       }
       fillSelect($("children"), childrenValues, 0);
 
-      updateExtraBedControls();
+      const hasChildren = unit.max_children > 0;
+      $("childrenBlock").style.display = hasChildren ? "" : "none";
+      $("extraBedBlock").style.display = hasChildren ? "" : "none";
+
+      if (!hasChildren) {
+        fillSelect($("children"), [{ value: 0, label: "0" }], 0);
+        fillSelect($("extraBed"), [{ value: 0, label: "0" }], 0);
+      } else {
+        updateExtraBedControls();
+      }
     }
 
     function updateExtraBedControls() {
@@ -515,7 +576,7 @@
 
     async function loadInitialData() {
       showError("");
-      units = await api("/api/v2/units");
+      units = (await api("/api/v2/units")).map(enrichUnit);
       tariffs = await api("/api/v2/tariffs");
 
       if (!units.length) throw new Error("Нет доступных домиков.");
@@ -531,6 +592,7 @@
       );
 
       updateGuestControls();
+      updateStayTimeNotes();
       resetCalculationState("Домик выбран. Обновляем доступные даты…");
       await refreshUnavailableAndCalendars();
     }
@@ -552,19 +614,23 @@
     }
 
     function renderSummary(data) {
+      const unit = getSelectedUnit();
+      const unitTitle = unit?.title || data.unit_title;
+      const checkInTime = unit?.check_in_time ? ` с ${unit.check_in_time}` : "";
+      const checkOutTime = unit?.check_out_time ? ` до ${unit.check_out_time}` : "";
+
       $("summary").innerHTML = `
-        <div><strong>Домик:</strong> ${data.unit_title}</div>
+        <div><strong>Домик:</strong> ${unitTitle}</div>
         <div><strong>Тариф:</strong> ${data.tariff_title}</div>
         <div><strong>Взрослые:</strong> ${data.adults}</div>
         <div><strong>Дети:</strong> ${data.children}</div>
         <div><strong>Доп. места:</strong> ${data.extra_bed_count} (${data.extra_bed_amount} ₽)</div>
-        <div><strong>Заезд:</strong> ${data.check_in}</div>
-        <div><strong>Выезд:</strong> ${data.check_out}</div>
+        <div><strong>Заезд:</strong> ${data.check_in}${checkInTime}</div>
+        <div><strong>Выезд:</strong> ${data.check_out}${checkOutTime}</div>
         <div><strong>Ночей:</strong> ${data.nights}</div>
         <div><strong>Стоимость проживания:</strong> ${data.subtotal_amount} ₽</div>
         <div><strong>Итого:</strong> ${data.total_amount} ₽</div>
         <div><strong>Предоплата:</strong> ${data.prepay_amount} ₽</div>
-        <div><strong>Реквизиты сегодня:</strong> ${data.payment_profile.title}</div>
       `;
     }
 
@@ -637,9 +703,6 @@
 
           if (iso < minCheckout) return true;
           if (iso > maxByStay) return true;
-
-          // checkout в день следующего заезда разрешаем,
-          // позже — уже нельзя
           if (nextBlockedStart && iso > nextBlockedStart) return true;
 
           return false;
@@ -725,6 +788,7 @@
         $("calendarHint").textContent = "Загружаем занятые даты…";
         await fetchUnavailableRanges();
         setupCalendars();
+        updateStayTimeNotes();
       } catch (e) {
         showError(e.message || "Не удалось загрузить занятые даты.");
         $("calendarHint").textContent = "Не удалось подготовить календарь.";
@@ -772,6 +836,8 @@
     $("sendBtn").addEventListener("click", () => {
       if (!lastCalculation) return;
 
+      const unit = getSelectedUnit();
+
       const payload = {
         type: "booking_calculated",
         data: {
@@ -784,7 +850,7 @@
           check_out: lastCalculation.check_out,
           total_amount: lastCalculation.total_amount,
           prepay_amount: lastCalculation.prepay_amount,
-          unit_title: lastCalculation.unit_title,
+          unit_title: unit?.title || lastCalculation.unit_title,
           tariff_title: lastCalculation.tariff_title,
         }
       };

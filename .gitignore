@@ -23,3 +23,7 @@ _backup_*/
 
 Untitled 1.pdf
 bot/admin_messages.json
+
+# runtime files
+bot/booking_contacts.json
+bot/admin_messages.json
