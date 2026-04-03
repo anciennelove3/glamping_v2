@@ -34,17 +34,68 @@ API_BASE_URL = os.getenv("API_BASE_URL", "").rstrip("/")
 BOOKING_WEBAPP_URL = os.getenv("BOOKING_WEBAPP_URL", "").strip()
 ROUTES_WEBAPP_URL = os.getenv("ROUTES_WEBAPP_URL", "").strip()
 ADMIN_WEBAPP_URL = os.getenv("ADMIN_WEBAPP_URL", "").strip()
-ABOUT_TEXT = os.getenv("ABOUT_TEXT", "Информация о нас скоро появится.")
 
 CONTACT_USERNAME = os.getenv("CONTACT_USERNAME", "@username").strip()
-RULES_SHORT_TEXT = os.getenv(
-    "RULES_SHORT_TEXT",
-    "Приезжайте и кайфуйте. Вот такие простые правила у нас.",
-).strip()
+RULES_SHORT_TEXT = """ДОРОГИЕ ГОСТИ!
+Просим заранее ознакомиться с правилами проживания 😊
+
+Время заезда и выезда отличаются в зависимости от дома. В момент бронирования время будет указано.
+
+Наш дом – это место семейного тихого отдыха! Мы построили его, вкладывая свою душу.
+Так давайте отдыхать так, чтобы ваш отдых оставил только приятные впечатления для всех.
+
+Количество взрослых гостей мы ограничиваем до 2-х, с детьми вместимость до 4-5 (в зависимости от возраста).
+
+НА ТЕРРИТОРИИ ДЕЙСТВУЕТ "ЗАКОН ТИШИНЫ"
+
+Шуметь после 21:00 на улице ЗАПРЕЩЕНО.
+Музыку ГРОМКО не включать.
+Музыкальные колонки также запрещены, в доме есть Яндекс станция и телевизор.
+
+Если вы планируете вечеринку с распитием алкогольных напитков, то мы вам точно не подходим
+и рекомендуем подобрать другое место.
+
+ФЕЙЕРВЕРКИ И ХЛОПУШКИ НА ТЕРРИТОРИИ И ЗА ЕЕ ПРЕДЕЛАМИ ❌ ЗАПРЕЩЕНЫ ❌
+
+МЫ НЕ ЗАСЕЛЯЕМ С ПИТОМЦАМИ, ПРОСЬБА ОТНЕСТИСЬ С ПОНИМАНИЕМ.
+
+ПРИ ВНЕСЕНИИ ПРЕДОПЛАТЫ вы автоматически соглашаетесь с правилами изложенными выше
+и НЕСЁТЕ ОТВЕТСТВЕННОСТЬ за их соблюдение!""".strip()
 RULES_PDF_PATH = os.getenv("RULES_PDF_PATH", "").strip()
+
+ROUTE_PLACE_NAME = os.getenv("ROUTE_PLACE_NAME", "Тишь да Гладь").strip()
+ROUTE_ADDRESS_TEXT = os.getenv("ROUTE_ADDRESS_TEXT", "Адрес скоро добавим.").strip()
+ROUTE_HINT_TEXT = os.getenv(
+    "ROUTE_HINT_TEXT",
+    "Если будет сложно найти — напишите нам, мы подскажем.",
+).strip()
 
 ADMIN_CHAT_ID_RAW = os.getenv("ADMIN_CHAT_ID", "").strip()
 ADMIN_USER_IDS_RAW = os.getenv("ADMIN_USER_IDS", "").strip()
+
+RULES_VERSION = "2026-03-30"
+
+START_TEXT = (
+    "🏕️ <b>Добро пожаловать в «Тишь да Гладь»!</b>\n\n"
+    "Здесь слышно тишину.\n"
+    "Не метафора — реальное ощущение, за которым к нам приезжают. "
+    "Когда вокруг нет соседей, нет лишних людей и город остаётся далеко позади.\n\n"
+    "Давайте знакомиться, меня зовут Наталья, я идейный вдохновитель и заботливая хозяйка "
+    "уникального пространства «Тишь да Гладь».\n"
+    "В период пандемии мы с супругом решили заняться строительством дома, вдали от городской "
+    "суеты, среди живописных лесов и полей.\n\n"
+    "«Тишь да Гладь» — место силы.\n"
+    "Небольшой уголок для душевного отдыха, где можно остановиться, выдохнуть и побыть в тишине.\n"
+    "Здесь вас ждут 2 современных уютных домика, а рядом — жаркая баня и горячий чан, "
+    "которые особенно хороши вечером, когда вокруг становится совсем тихо.\n\n"
+    "Нажмите <b>«Забронировать домик»</b>, чтобы посмотреть даты и цены."
+)
+
+BOOKING_GATE_TEXT = (
+    "❗ <b>Перед бронированием нужно ознакомиться с правилами проживания.</b>\n\n"
+    "Пожалуйста, прочитайте правила и подтвердите, что вы ознакомились с ними. "
+    "После этого я открою бронирование."
+)
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
@@ -85,6 +136,10 @@ BOOKING_CONTACTS_PATH = os.path.join(os.path.dirname(__file__), "booking_contact
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
+# Временное хранение подтверждения правил.
+# После рестарта бота пользователь подтвердит их заново.
+accepted_rules_by_user: dict[int, str] = {}
+
 
 class BookingFlow(StatesGroup):
     waiting_contact = State()
@@ -92,6 +147,14 @@ class BookingFlow(StatesGroup):
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_USER_IDS
+
+
+def has_accepted_rules(user_id: int) -> bool:
+    return accepted_rules_by_user.get(user_id) == RULES_VERSION
+
+
+def mark_rules_accepted(user_id: int) -> None:
+    accepted_rules_by_user[user_id] = RULES_VERSION
 
 
 def no_preview() -> LinkPreviewOptions:
@@ -119,15 +182,37 @@ def mention_user(name: str | None, username: str | None, tg_user_id: int | None)
     return safe_name
 
 
+def build_how_to_get_text() -> str:
+    safe_place = html.escape(ROUTE_PLACE_NAME)
+    safe_address = html.escape(ROUTE_ADDRESS_TEXT)
+    safe_hint = html.escape(ROUTE_HINT_TEXT)
+
+    return (
+        f"📍 <b>Как добраться</b>\n\n"
+        f"<b>{safe_place}</b>\n"
+        f"Адрес: <code>{safe_address}</code>\n\n"
+        f"{safe_hint}"
+    )
+
+
 def main_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🏕️ Забронировать домик", web_app=WebAppInfo(url=BOOKING_WEBAPP_URL))],
+            [KeyboardButton(text="🏕️ Забронировать домик")],
             [KeyboardButton(text="📅 Мои брони")],
             [KeyboardButton(text="📞 Связаться с нами")],
+            [KeyboardButton(text="📍 Как добраться")],
             [KeyboardButton(text="❓ Правила проживания")],
         ],
         resize_keyboard=True,
+    )
+
+
+def booking_open_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🏕️ Открыть бронирование", web_app=WebAppInfo(url=BOOKING_WEBAPP_URL))]
+        ]
     )
 
 
@@ -158,12 +243,35 @@ def rules_kb() -> InlineKeyboardMarkup:
     )
 
 
+def rules_gate_kb() -> InlineKeyboardMarkup:
+    rows = []
+
+    if RULES_PDF_PATH and os.path.exists(RULES_PDF_PATH):
+        rows.append([InlineKeyboardButton(text="📄 Открыть PDF", callback_data="rules:pdf")])
+
+    rows.append([InlineKeyboardButton(text="✅ С правилами ознакомлен(а)", callback_data="rules:accept")])
+    rows.append([InlineKeyboardButton(text="↩️ Назад", callback_data="rules:back")])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def contact_support_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📞 Написать", url=contact_url(CONTACT_USERNAME))]
         ]
     )
+
+
+def route_kb() -> InlineKeyboardMarkup | None:
+    if not ROUTES_WEBAPP_URL:
+        return None
+
+    rows = [
+        [InlineKeyboardButton(text="📍 Открыть в Яндекс Картах", url=ROUTES_WEBAPP_URL)],
+        [InlineKeyboardButton(text="📞 Связаться с нами", url=contact_url(CONTACT_USERNAME))],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def pay_booking_kb(booking_id: int) -> InlineKeyboardMarkup:
@@ -780,7 +888,7 @@ async def notify_admin_cancel(
 async def start(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "🏕️ <b>Добро пожаловать в «Тишь да Гладь»!</b>\n\nВыберите действие:",
+        START_TEXT,
         parse_mode="HTML",
         reply_markup=main_kb(),
     )
@@ -885,9 +993,55 @@ async def admin_list(callback: CallbackQuery):
 
 
 @dp.message(F.text == "🏕️ Забронировать домик")
-async def booking_fallback(message: Message):
+async def booking_entry(message: Message, state: FSMContext):
+    await state.clear()
+
+    if not has_accepted_rules(message.from_user.id):
+        await message.answer(
+            BOOKING_GATE_TEXT,
+            parse_mode="HTML",
+            reply_markup=main_kb(),
+        )
+        await message.answer(
+            f"❓ <b>Правила проживания</b>\n\n{html.escape(RULES_SHORT_TEXT)}",
+            parse_mode="HTML",
+            reply_markup=rules_gate_kb(),
+        )
+        return
+
     await message.answer(
-        "Откройте сценарий бронирования через кнопку «🏕️ Забронировать домик».",
+        "Нажмите кнопку ниже, чтобы открыть бронирование 👇",
+        reply_markup=booking_open_kb(),
+    )
+
+
+@dp.callback_query(F.data == "rules:accept")
+async def rules_accept(callback: CallbackQuery):
+    mark_rules_accepted(callback.from_user.id)
+    await callback.answer("Подтверждение сохранено")
+
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    await callback.message.answer(
+        "✅ Спасибо. Теперь можете перейти к бронированию.",
+        reply_markup=booking_open_kb(),
+    )
+
+
+@dp.callback_query(F.data == "rules:back")
+async def rules_back(callback: CallbackQuery):
+    await callback.answer()
+
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    await callback.message.answer(
+        "Хорошо. Когда будете готовы, нажмите «🏕️ Забронировать домик».",
         reply_markup=main_kb(),
     )
 
@@ -934,6 +1088,24 @@ async def contact_us(message: Message):
     )
 
 
+@dp.message(F.text == "📍 Как добраться")
+async def how_to_get(message: Message):
+    kb = route_kb()
+    if not kb:
+        await message.answer(
+            "Маршрут пока не настроен.",
+            reply_markup=main_kb(),
+        )
+        return
+
+    await message.answer(
+        build_how_to_get_text(),
+        parse_mode="HTML",
+        reply_markup=kb,
+        link_preview_options=no_preview(),
+    )
+
+
 @dp.message(F.text == "❓ Правила проживания")
 async def rules(message: Message):
     await message.answer(
@@ -941,10 +1113,11 @@ async def rules(message: Message):
         parse_mode="HTML",
         reply_markup=main_kb(),
     )
-    await message.answer(
-        "Открыть полный PDF:",
-        reply_markup=rules_kb(),
-    )
+    if RULES_PDF_PATH and os.path.exists(RULES_PDF_PATH):
+        await message.answer(
+            "Открыть полный PDF:",
+            reply_markup=rules_kb(),
+        )
 
 
 @dp.callback_query(F.data == "rules:pdf")

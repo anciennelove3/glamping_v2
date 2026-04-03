@@ -115,6 +115,8 @@
       overflow: hidden;
       background: #0b1220;
       cursor: pointer;
+      display: flex;
+      flex-direction: column;
     }
 
     .unit.active {
@@ -123,7 +125,7 @@
 
     .unit img {
       width: 100%;
-      height: 180px;
+      height: 220px;
       object-fit: cover;
       display: block;
       background: #111827;
@@ -131,6 +133,17 @@
 
     .unit-body {
       padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .unit-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 8px;
     }
 
     .muted {
@@ -291,10 +304,150 @@
       border-color: #334155;
     }
 
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.82);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 9999;
+    }
+
+    .modal-overlay.open {
+      display: flex;
+    }
+
+    .modal {
+      width: min(980px, 100%);
+      max-height: calc(100vh - 32px);
+      overflow: auto;
+      background: #0f172a;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+    }
+
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .modal-close {
+      width: auto;
+      padding: 10px 14px;
+    }
+
+    .modal-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 18px;
+    }
+
+    .gallery-main {
+      position: relative;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: #0b1220;
+    }
+
+    .gallery-main img {
+      width: 100%;
+      height: 420px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .gallery-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: auto;
+      min-width: 44px;
+      padding: 10px 12px;
+      background: rgba(15, 23, 42, 0.72);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .gallery-prev { left: 10px; }
+    .gallery-next { right: 10px; }
+
+    .thumbs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .thumb {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      padding: 0;
+      background: #0b1220;
+    }
+
+    .thumb.active {
+      outline: 2px solid var(--accent);
+    }
+
+    .thumb img {
+      width: 100%;
+      height: 80px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .detail-box {
+      background: #111827;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+
+    .detail-box h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    .feature-list {
+      margin: 0;
+      padding-left: 18px;
+      line-height: 1.6;
+    }
+
+    .detail-meta {
+      display: grid;
+      gap: 8px;
+      font-size: 15px;
+    }
+
+    @media (max-width: 900px) {
+      .modal-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
     @media (max-width: 700px) {
       .grid,
-      .units {
+      .units,
+      .unit-actions {
         grid-template-columns: 1fr;
+      }
+
+      .gallery-main img {
+        height: 280px;
+      }
+
+      .thumbs {
+        grid-template-columns: repeat(3, 1fr);
       }
     }
   </style>
@@ -302,6 +455,15 @@
 <body>
   <div class="wrap">
     <h1>Бронирование</h1>
+
+    <div style="margin:12px 0;padding:12px;background:#fff;color:#000;border-radius:12px;">
+      <div style="font-weight:700;">BUILD 20260401-3</div>
+      <div style="margin-top:8px;">WEBP test:</div>
+      <img src="/webapp/booking/media/triangle/thumbs/01.webp?v=20260401-3" style="width:220px;display:block;margin:8px 0;" alt="webp test">
+
+      <div>JPG test:</div>
+      <img src="/webapp/booking/media/triangle/01.jpg?v=20260401-3" style="width:220px;display:block;margin:8px 0;" alt="jpg test">
+    </div>
 
     <div id="errorBox" class="error"></div>
 
@@ -359,6 +521,65 @@
       <h2>3. Итог</h2>
       <div id="summary" class="summary">Заполните параметры и нажмите «Рассчитать стоимость».</div>
     </div>
+
+    <div class="card">
+      <h2>4. Условия бронирования</h2>
+      <div id="bookingTerms" class="summary"></div>
+    </div>
+  </div>
+
+  <div id="unitModal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="modalTitle" style="margin:0;">О домике</h2>
+        <button id="modalCloseBtn" class="secondary modal-close" type="button">Закрыть</button>
+      </div>
+
+      <div class="modal-grid">
+        <div>
+          <div class="gallery-main">
+            <img id="modalMainImage" src="" alt="" decoding="async">
+            <button id="galleryPrev" class="gallery-nav gallery-prev secondary" type="button">‹</button>
+            <button id="galleryNext" class="gallery-nav gallery-next secondary" type="button">›</button>
+          </div>
+          <div id="modalThumbs" class="thumbs"></div>
+        </div>
+
+        <div>
+          <div class="detail-box">
+            <h3>О домике</h3>
+            <div id="modalDescription" class="muted" style="line-height:1.7;"></div>
+          </div>
+
+          <div class="detail-box">
+            <h3>Что внутри</h3>
+            <ul id="modalFeatures" class="feature-list"></ul>
+          </div>
+
+          <div id="includedBox" class="detail-box" style="display:none;">
+            <h3>В стоимость входит</h3>
+            <ul id="modalIncluded" class="feature-list"></ul>
+          </div>
+
+          <div id="equipmentBox" class="detail-box" style="display:none;">
+            <h3>Дом оборудован</h3>
+            <ul id="modalEquipment" class="feature-list"></ul>
+          </div>
+
+          <div id="territoryBox" class="detail-box" style="display:none;">
+            <h3>На территории</h3>
+            <ul id="modalTerritory" class="feature-list"></ul>
+          </div>
+
+          <div class="detail-box">
+            <h3>Основная информация</h3>
+            <div id="modalMeta" class="detail-meta"></div>
+          </div>
+
+          <button id="modalSelectBtn" type="button">Выбрать этот домик</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -374,6 +595,23 @@
 
     const $ = (id) => document.getElementById(id);
 
+    const ASSET_VERSION = "20260401-2";
+    const MEDIA_BASE = "/webapp/booking/media";
+    const TRI_MAIN = `${MEDIA_BASE}/triangle/main`;
+    const TRI_THUMBS = `${MEDIA_BASE}/triangle/thumbs`;
+    const SKV_MAIN = `${MEDIA_BASE}/skvorechnik/main`;
+    const SKV_THUMBS = `${MEDIA_BASE}/skvorechnik/thumbs`;
+
+    const BOOKING_TERMS_HTML = `
+      <div><strong>Предоплата:</strong> 50% от общей суммы от общего чека.</div>
+      <div><strong>Важно:</strong> после внесения предоплаты количество взрослых гостей дополнить будет нельзя.</div>
+      <div><strong>Бесплатная отмена / перенос:</strong> за 7 дней до заезда.</div>
+      <div><strong>Вторая часть суммы:</strong> вносится за сутки до заезда безналично или при подписании договора наличными.</div>
+      <div><strong>Депозит:</strong> 5 000 ₽, вносится в день заселения.</div>
+      <div><strong>Возврат депозита:</strong> до 20:00 после выселения при условии отсутствия повреждений имущества.</div>
+      <div><strong>Удержание депозита:</strong> производится при повреждении имущества. Сумма удержания равна стоимости покрытия ущерба.</div>
+    `;
+
     const UNIT_META = {
       1: {
         title: 'Дом "Треугольный"',
@@ -381,7 +619,8 @@
         check_out_time: "12:00",
         max_adults: 2,
         max_children: 3,
-        max_total_guests: 5
+        max_total_guests: 5,
+        child_policy: "Дети до 7 лет — бесплатно, старше 7 лет — доплата 1000 ₽."
       },
       2: {
         title: 'Мини-дом "Скворечник"',
@@ -389,7 +628,114 @@
         check_out_time: "12:30",
         max_adults: 2,
         max_children: 0,
-        max_total_guests: 2
+        max_total_guests: 2,
+        child_policy: ""
+      }
+    };
+
+    const UNIT_DETAILS = {
+      1: {
+        preview: `${TRI_THUMBS}/01.webp?v=${ASSET_VERSION}`,
+        description: 'Дом "Треугольный" — просторный вариант для спокойного семейного отдыха.',
+        features: [
+          "До 2 взрослых",
+          "До 3 детей",
+          "Дети до 7 лет — бесплатно",
+          "Дети старше 7 лет — доплата 1000 ₽",
+          "Уютное пространство для семейного отдыха"
+        ],
+        included: [
+          "Аренда дома",
+          "Постельное бельё и полотенца",
+          "Базовые принадлежности для комфортного отдыха",
+          "Доступ к территории и инфраструктуре"
+        ],
+        equipment: [
+          "Спальные места для семьи",
+          "Санузел",
+          "Кухонная зона",
+          "Холодильник",
+          "Чайник",
+          "Посуда",
+          "Отопление / тёплый пол"
+        ],
+        territory: [
+          "Парковка",
+          "Зона отдыха",
+          "Мангальная зона",
+          "Wi-Fi"
+        ],
+        photos: [
+          { full: `${TRI_MAIN}/01.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/01.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/02.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/02.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/03.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/03.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/04.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/04.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/05.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/05.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/06.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/06.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/07.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/07.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/08.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/08.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/09.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/09.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/10.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/10.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/11.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/11.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/12.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/12.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/13.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/13.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/14.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/14.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/15.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/15.webp?v=${ASSET_VERSION}` }
+        ]
+      },
+      2: {
+        preview: `${SKV_THUMBS}/01.webp?v=${ASSET_VERSION}`,
+        description: 'Мини-дом "Скворечник" — компактное и уютное пространство для отдыха вдвоём.',
+        features: [
+          "Только для 2 взрослых",
+          "Размещение с детьми не предусмотрено",
+          "Уютный формат для спокойного отдыха"
+        ],
+        included: [
+          "Аренда дома (баня, чан — в зависимости от выбранного пакета)",
+          "Постельное бельё, полотенца (по 2 каждому гостю)",
+          "Халаты, тапочки",
+          "Веник, масла и простыни для бани",
+          "Шампунь / кондиционер, гель для душа, зубные щётки / паста",
+          "Мангальная зона (уголь, розжиг, решётка, шампура)",
+          "Аптечка",
+          "Туалетная бумага, салфетки, мешки для мусора",
+          "Ватные палочки, диски, крем для рук",
+          "Продукты: молотый кофе, чай, сливки, сахар, соль, специи, растительное масло"
+        ],
+        equipment: [
+          "Телевизор",
+          "Индукционная плита",
+          "Холодильник",
+          "Чайник, кофеварка",
+          "СВЧ",
+          "Камин на дровах",
+          "Тёплый пол",
+          "Кондиционер",
+          "Вся необходимая посуда для приготовления пищи и сервировки стола",
+          "Фен",
+          "Яндекс Станция",
+          "Проектор (подписка Иви, КиноПоиск, VK Видео) — 500 ₽/сутки"
+        ],
+        territory: [
+          "Банный чан",
+          "Баня",
+          "Мангал",
+          "Пергола (зона отдыха на террасе дома)",
+          "Качель / батут / шезлонги",
+          "Стоянка (закрытая территория)",
+          "Wi-Fi",
+          "Видеонаблюдение"
+        ],
+        photos: [
+          { full: `${SKV_MAIN}/01.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/01.webp?v=${ASSET_VERSION}` },
+          { full: `${SKV_MAIN}/02.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/02.webp?v=${ASSET_VERSION}` },
+          { full: `${SKV_MAIN}/03.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/03.webp?v=${ASSET_VERSION}` },
+          { full: `${SKV_MAIN}/04.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/04.webp?v=${ASSET_VERSION}` },
+          { full: `${SKV_MAIN}/05.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/05.webp?v=${ASSET_VERSION}` },
+          { full: `${SKV_MAIN}/06.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/06.webp?v=${ASSET_VERSION}` },
+          { full: `${SKV_MAIN}/07.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/07.webp?v=${ASSET_VERSION}` }
+        ]
       }
     };
 
@@ -403,6 +749,10 @@
 
     let checkInPicker = null;
     let checkOutPicker = null;
+
+    let modalUnitId = null;
+    let modalImages = [];
+    let modalImageIndex = 0;
 
     const MIN_LEAD_DAYS = 1;
     const MIN_STAY_NIGHTS = 1;
@@ -478,12 +828,44 @@
         check_out_time: meta.check_out_time,
         max_adults: meta.max_adults,
         max_children: meta.max_children,
-        max_total_guests: meta.max_total_guests
+        max_total_guests: meta.max_total_guests,
+        child_policy: meta.child_policy || ""
       };
     }
 
     function getSelectedUnit() {
       return units.find(u => u.id === selectedUnitId) || null;
+    }
+
+    function getMaxChildren(unit) {
+      return Number(unit?.max_children ?? 0);
+    }
+
+    function hasChildren(unit) {
+      return getMaxChildren(unit) > 0;
+    }
+
+    function renderCapacityText(unit) {
+      const parts = [
+        `Макс. гостей: ${unit.max_total_guests}`,
+        `Взрослых: до ${unit.max_adults}`
+      ];
+
+      if (hasChildren(unit)) {
+        parts.push(`Детей: до ${unit.max_children}`);
+      }
+
+      return parts.join(" • ");
+    }
+
+    function selectUnit(unitId) {
+      if (selectedUnitId === unitId) return;
+      selectedUnitId = unitId;
+      renderUnits();
+      updateGuestControls();
+      updateStayTimeNotes();
+      resetCalculationState("Домик выбран. Обновляем доступные даты…");
+      refreshUnavailableAndCalendars();
     }
 
     function updateStayTimeNotes() {
@@ -503,30 +885,43 @@
       box.innerHTML = "";
 
       units.forEach((unit) => {
+        const detail = UNIT_DETAILS[unit.id] || {};
+        const preview = detail.preview || ("https://placehold.co/800x500?text=" + encodeURIComponent(unit.title));
+        const childPolicyHtml = unit.child_policy ? `<div class="muted">${unit.child_policy}</div>` : "";
+
         const div = document.createElement("div");
         div.className = "unit" + (unit.id === selectedUnitId ? " active" : "");
         div.innerHTML = `
-          <img src="https://placehold.co/800x500?text=${encodeURIComponent(unit.title)}" alt="${unit.title}">
+          <img src="${preview}" alt="${unit.title}" loading="lazy" decoding="async">
           <div class="unit-body">
-            <h3 style="margin:0 0 8px">${unit.title}</h3>
+            <h3 style="margin:0 0 4px">${unit.title}</h3>
             <div class="muted">${unit.short_description || ""}</div>
-            <div style="margin-top:10px" class="muted">
-              Макс. гостей: ${unit.max_total_guests} • Взрослых: до ${unit.max_adults} • Детей: до ${unit.max_children}
-            </div>
-            <div style="margin-top:8px" class="muted">
+            <div class="muted">${renderCapacityText(unit)}</div>
+            <div class="muted">
               Заезд: с ${unit.check_in_time || "—"} • Выезд: до ${unit.check_out_time || "—"}
+            </div>
+            ${childPolicyHtml}
+            <div class="unit-actions">
+              <button type="button" class="select-unit-btn">${unit.id === selectedUnitId ? "Выбрано" : "Выбрать"}</button>
+              <button type="button" class="secondary details-unit-btn">Подробнее</button>
             </div>
           </div>
         `;
-        div.addEventListener("click", async () => {
-          if (unit.id === selectedUnitId) return;
-          selectedUnitId = unit.id;
-          renderUnits();
-          updateGuestControls();
-          updateStayTimeNotes();
-          resetCalculationState("Домик выбран. Обновляем доступные даты…");
-          await refreshUnavailableAndCalendars();
+
+        div.querySelector(".select-unit-btn").addEventListener("click", (e) => {
+          e.stopPropagation();
+          selectUnit(unit.id);
         });
+
+        div.querySelector(".details-unit-btn").addEventListener("click", (e) => {
+          e.stopPropagation();
+          openUnitModal(unit.id);
+        });
+
+        div.addEventListener("click", () => {
+          selectUnit(unit.id);
+        });
+
         box.appendChild(div);
       });
     }
@@ -541,17 +936,18 @@
       }
       fillSelect($("adults"), adultsValues, adultsValues[0]?.value || 1);
 
+      const maxChildren = getMaxChildren(unit);
       const childrenValues = [];
-      for (let i = 0; i <= unit.max_children; i++) {
+      for (let i = 0; i <= maxChildren; i++) {
         childrenValues.push({ value: i, label: String(i) });
       }
       fillSelect($("children"), childrenValues, 0);
 
-      const hasChildren = unit.max_children > 0;
-      $("childrenBlock").style.display = hasChildren ? "" : "none";
-      $("extraBedBlock").style.display = hasChildren ? "" : "none";
+      const canHaveChildren = hasChildren(unit);
+      $("childrenBlock").style.display = canHaveChildren ? "" : "none";
+      $("extraBedBlock").style.display = canHaveChildren ? "" : "none";
 
-      if (!hasChildren) {
+      if (!canHaveChildren) {
         fillSelect($("children"), [{ value: 0, label: "0" }], 0);
         fillSelect($("extraBed"), [{ value: 0, label: "0" }], 0);
       } else {
@@ -574,8 +970,30 @@
       $("summary").textContent = summaryText || "Заполните параметры и нажмите «Рассчитать стоимость».";
     }
 
+    function renderList(boxId, listId, items = []) {
+      const box = $(boxId);
+      const list = $(listId);
+
+      list.innerHTML = "";
+
+      if (!items || !items.length) {
+        box.style.display = "none";
+        return;
+      }
+
+      items.forEach((item) => {
+        const li = document.createElement("li");
+        li.textContent = item;
+        list.appendChild(li);
+      });
+
+      box.style.display = "";
+    }
+
     async function loadInitialData() {
       showError("");
+      $("bookingTerms").innerHTML = BOOKING_TERMS_HTML;
+
       units = (await api("/api/v2/units")).map(enrichUnit);
       tariffs = await api("/api/v2/tariffs");
 
@@ -606,8 +1024,8 @@
         unit_id: selectedUnitId,
         tariff_id: Number($("tariff").value),
         adults: Number($("adults").value),
-        children: Number($("children").value),
-        extra_bed_count: Number($("extraBed").value),
+        children: Number($("children").value || 0),
+        extra_bed_count: Number($("extraBed").value || 0),
         check_in: $("checkIn").value,
         check_out: $("checkOut").value,
       };
@@ -618,13 +1036,20 @@
       const unitTitle = unit?.title || data.unit_title;
       const checkInTime = unit?.check_in_time ? ` с ${unit.check_in_time}` : "";
       const checkOutTime = unit?.check_out_time ? ` до ${unit.check_out_time}` : "";
+      const canHaveChildren = hasChildren(unit);
 
-      $("summary").innerHTML = `
+      let html = `
         <div><strong>Домик:</strong> ${unitTitle}</div>
         <div><strong>Тариф:</strong> ${data.tariff_title}</div>
         <div><strong>Взрослые:</strong> ${data.adults}</div>
-        <div><strong>Дети:</strong> ${data.children}</div>
-        <div><strong>Доп. места:</strong> ${data.extra_bed_count} (${data.extra_bed_amount} ₽)</div>
+      `;
+
+      if (canHaveChildren) {
+        html += `<div><strong>Дети:</strong> ${data.children}</div>`;
+        html += `<div><strong>Доп. места:</strong> ${data.extra_bed_count} (${data.extra_bed_amount} ₽)</div>`;
+      }
+
+      html += `
         <div><strong>Заезд:</strong> ${data.check_in}${checkInTime}</div>
         <div><strong>Выезд:</strong> ${data.check_out}${checkOutTime}</div>
         <div><strong>Ночей:</strong> ${data.nights}</div>
@@ -632,6 +1057,12 @@
         <div><strong>Итого:</strong> ${data.total_amount} ₽</div>
         <div><strong>Предоплата:</strong> ${data.prepay_amount} ₽</div>
       `;
+
+      if (unit?.child_policy) {
+        html += `<div><strong>Важно:</strong> ${unit.child_policy}</div>`;
+      }
+
+      $("summary").innerHTML = html;
     }
 
     function expandUnavailableDates(items) {
@@ -717,11 +1148,7 @@
         (nextBlockedStart && currentCheckOut > nextBlockedStart);
 
       if (forceReset || invalidCurrent) {
-        let safeCheckout = minCheckout;
-        if (nextBlockedStart && nextBlockedStart >= minCheckout && nextBlockedStart <= maxByStay) {
-          safeCheckout = minCheckout;
-        }
-        checkOutPicker.setDate(safeCheckout, true);
+        checkOutPicker.setDate(minCheckout, true);
       }
     }
 
@@ -747,14 +1174,12 @@
         disableMobile: true,
         defaultDate: defaultCheckIn,
         disable: disabledCheckInDates,
-        onChange: function(selectedDates, dateStr) {
+        onChange: function(_, dateStr) {
           resetCalculationState("Дата заезда изменена. Пересчитайте стоимость.");
-
           if (!dateStr) {
             $("checkOut").value = "";
             return;
           }
-
           updateCheckoutConstraints(dateStr, true);
         }
       });
@@ -794,6 +1219,136 @@
         $("calendarHint").textContent = "Не удалось подготовить календарь.";
       }
     }
+
+    function openUnitModal(unitId) {
+      const unit = units.find(u => u.id === unitId);
+      const detail = UNIT_DETAILS[unitId] || {};
+      if (!unit) return;
+
+      modalUnitId = unitId;
+
+      if (detail.photos && detail.photos.length) {
+        modalImages = detail.photos;
+      } else {
+        const fallback = detail.preview || ("https://placehold.co/1200x800?text=" + encodeURIComponent(unit.title));
+        modalImages = [{ full: fallback, thumb: fallback }];
+      }
+
+      modalImageIndex = 0;
+
+      $("modalTitle").textContent = unit.title;
+      $("modalDescription").textContent =
+        detail.description || unit.full_description || unit.short_description || "Описание скоро появится.";
+
+      $("modalFeatures").innerHTML = "";
+      (detail.features || []).forEach((feature) => {
+        const li = document.createElement("li");
+        li.textContent = feature;
+        $("modalFeatures").appendChild(li);
+      });
+
+      renderList("includedBox", "modalIncluded", detail.included || []);
+      renderList("equipmentBox", "modalEquipment", detail.equipment || []);
+      renderList("territoryBox", "modalTerritory", detail.territory || []);
+
+      let metaHtml = `
+        <div>Заезд: <strong>с ${unit.check_in_time || "—"}</strong></div>
+        <div>Выезд: <strong>до ${unit.check_out_time || "—"}</strong></div>
+        <div>Взрослых: <strong>до ${unit.max_adults}</strong></div>
+      `;
+
+      if (hasChildren(unit)) {
+        metaHtml += `<div>Детей: <strong>до ${unit.max_children}</strong></div>`;
+      }
+
+      metaHtml += `<div>Всего гостей: <strong>до ${unit.max_total_guests}</strong></div>`;
+
+      if (unit.child_policy) {
+        metaHtml += `<div>Условия для детей: <strong>${unit.child_policy}</strong></div>`;
+      }
+
+      $("modalMeta").innerHTML = metaHtml;
+
+      renderModalImage();
+      renderModalThumbs();
+
+      $("galleryPrev").style.display = modalImages.length > 1 ? "" : "none";
+      $("galleryNext").style.display = modalImages.length > 1 ? "" : "none";
+
+      $("unitModal").classList.add("open");
+      document.body.style.overflow = "hidden";
+    }
+
+    function closeUnitModal() {
+      $("unitModal").classList.remove("open");
+      document.body.style.overflow = "";
+      modalUnitId = null;
+      modalImages = [];
+      modalImageIndex = 0;
+    }
+
+    function renderModalImage() {
+      const item = modalImages[modalImageIndex];
+      const src = item?.full || "";
+      $("modalMainImage").src = src;
+      $("modalMainImage").alt = $("modalTitle").textContent || "Фото домика";
+    }
+
+    function renderModalThumbs() {
+      const box = $("modalThumbs");
+      box.innerHTML = "";
+
+      modalImages.forEach((item, index) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "thumb" + (index === modalImageIndex ? " active" : "");
+        btn.innerHTML = `<img src="${item.thumb}" alt="Фото ${index + 1}" loading="lazy" decoding="async">`;
+
+        btn.addEventListener("click", () => {
+          modalImageIndex = index;
+          renderModalImage();
+          renderModalThumbs();
+        });
+
+        box.appendChild(btn);
+      });
+    }
+
+    function showPrevImage() {
+      if (!modalImages.length) return;
+      modalImageIndex = (modalImageIndex - 1 + modalImages.length) % modalImages.length;
+      renderModalImage();
+      renderModalThumbs();
+    }
+
+    function showNextImage() {
+      if (!modalImages.length) return;
+      modalImageIndex = (modalImageIndex + 1) % modalImages.length;
+      renderModalImage();
+      renderModalThumbs();
+    }
+
+    $("galleryPrev").addEventListener("click", showPrevImage);
+    $("galleryNext").addEventListener("click", showNextImage);
+
+    $("modalCloseBtn").addEventListener("click", closeUnitModal);
+    $("unitModal").addEventListener("click", (e) => {
+      if (e.target.id === "unitModal") closeUnitModal();
+    });
+
+    $("modalSelectBtn").addEventListener("click", () => {
+      if (modalUnitId != null) {
+        selectUnit(modalUnitId);
+        closeUnitModal();
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (!$("unitModal").classList.contains("open")) return;
+      if (e.key === "Escape") closeUnitModal();
+      if (e.key === "ArrowLeft") showPrevImage();
+      if (e.key === "ArrowRight") showNextImage();
+    });
 
     $("children").addEventListener("change", () => {
       updateExtraBedControls();
