@@ -32,27 +32,28 @@ async def seed_if_needed():
             session.add_all([
                 Unit(
                     id=1,
-                    title="Домик №1",
-                    short_description="Компактный домик для 1–2 взрослых.",
+                    title='Дом "Треугольный"',
+                    short_description="Семейный дом до 5 гостей.",
                     full_description=(
-                        "Домик №1 подходит для спокойного размещения 1–2 взрослых гостей."
-                    ),
-                    max_total_guests=2,
-                    max_adults=2,
-                    max_children=0,
-                    active=True,
-                ),
-                Unit(
-                    id=2,
-                    title="Домик №2",
-                    short_description="Семейный домик до 5 гостей.",
-                    full_description=(
-                        "Домик №2 подходит для семьи: до 2 взрослых и до 3 детей, "
+                        'Дом "Треугольный" подходит для семьи: до 2 взрослых и до 3 детей, '
                         "всего не более 5 гостей."
                     ),
                     max_total_guests=5,
                     max_adults=2,
                     max_children=3,
+                    active=True,
+                ),
+                Unit(
+                    id=2,
+                    title='Мини-дом "Скворечник"',
+                    short_description="Уютный домик только для двоих взрослых.",
+                    full_description=(
+                        'Мини-дом "Скворечник" подходит для спокойного отдыха вдвоём. '
+                        "Размещение детей не предусмотрено."
+                    ),
+                    max_total_guests=2,
+                    max_adults=2,
+                    max_children=0,
                     active=True,
                 ),
             ])

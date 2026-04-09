@@ -1,31 +1,32 @@
+from __future__ import annotations
+
 from datetime import date
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class UnitOut(BaseModel):
+class ORMBaseModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+
+class UnitOut(ORMBaseModel):
     id: int
     title: str
-    short_description: str | None = None
-    full_description: str | None = None
-    max_total_guests: int
+    description: str | None = None
     max_adults: int
     max_children: int
+    max_total_guests: int
     active: bool
 
 
-class TariffOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+class TariffOut(ORMBaseModel):
     id: int
-    code: str
     title: str
     description: str | None = None
     active: bool
 
 
-class PaymentProfileOut(BaseModel):
+class PaymentProfileOut(ORMBaseModel):
     id: int
     title: str
     day_parity: str
@@ -43,18 +44,89 @@ class PriceBreakdownItem(BaseModel):
 
 
 class CalculateBookingRequest(BaseModel):
-    unit_id: int = Field(..., ge=1)
-    tariff_id: int = Field(..., ge=1)
-
-    adults: int = Field(..., ge=1, le=2)
-    children: int = Field(0, ge=0, le=3)
-    extra_bed_count: int = Field(0, ge=0, le=3)
-
+    unit_id: int
+    tariff_id: int
+    adults: int = Field(ge=1)
+    children: int = Field(default=0, ge=0)
+    extra_bed_count: int = Field(default=0, ge=0)
     check_in: date
     check_out: date
 
 
 class CalculateBookingResponse(BaseModel):
+    unit_id: int
+    unit_title: str
+    tariff_id: int
+    tariff_title: str
+    adults: int
+    children: int
+    total_guests: int
+    extra_bed_count: int
+    extra_bed_amount: int
+    check_in: str
+    check_out: str
+    nights: int
+    subtotal_amount: int
+    total_amount: int
+    prepay_amount: int
+    payment_profile: PaymentProfileOut
+    breakdown: list[PriceBreakdownItem]
+
+
+class UnavailableDatesRequest(BaseModel):
+    unit_id: int
+    date_from: date
+    date_to: date
+
+
+class UnavailableDateRangeItem(BaseModel):
+    check_in: str
+    check_out: str
+
+
+class UnavailableDatesResponse(BaseModel):
+    unit_id: int
+    date_from: str
+    date_to: str
+    items: list[UnavailableDateRangeItem]
+
+
+class CreateBookingRequest(BaseModel):
+    tg_user_id: int
+    phone: str
+    telegram_name: str | None = None
+    telegram_username: str | None = None
+
+    unit_id: int
+    tariff_id: int
+
+    adults: int = Field(ge=1)
+    children: int = Field(default=0, ge=0)
+    extra_bed_count: int = Field(default=0, ge=0)
+
+    check_in: date
+    check_out: date
+
+
+class CreateBookingResponse(BaseModel):
+    booking_id: int
+    status: str
+    expires_at: str
+    unit_id: int
+    tariff_id: int
+    total_amount: int
+    prepay_amount: int
+    payment_profile: PaymentProfileOut
+
+
+class ActiveBookingsRequest(BaseModel):
+    tg_user_id: int
+
+
+class ActiveBookingItem(BaseModel):
+    booking_id: int
+    status: str
+
     unit_id: int
     unit_title: str
 
@@ -65,54 +137,63 @@ class CalculateBookingResponse(BaseModel):
     children: int
     total_guests: int
     extra_bed_count: int
-    extra_bed_amount: int
 
     check_in: str
     check_out: str
     nights: int
 
-    subtotal_amount: int
     total_amount: int
     prepay_amount: int
 
-    payment_profile: PaymentProfileOut
-    breakdown: list[PriceBreakdownItem]
+    expires_at: str | None = None
+    can_cancel: bool
+    cancel_reason: str | None = None
 
 
-class CreateBookingRequest(BaseModel):
-    tg_user_id: int = Field(..., ge=1)
-    phone: str = Field(..., min_length=5, max_length=32)
-
-    telegram_name: str | None = None
-    telegram_username: str | None = None
-
-    unit_id: int = Field(..., ge=1)
-    tariff_id: int = Field(..., ge=1)
-
-    adults: int = Field(..., ge=1, le=2)
-    children: int = Field(0, ge=0, le=3)
-    extra_bed_count: int = Field(0, ge=0, le=3)
-
-    check_in: date
-    check_out: date
+class ActiveBookingsResponse(BaseModel):
+    items: list[ActiveBookingItem]
 
 
-class CreateBookingResponse(BaseModel):
+class CancelBookingRequest(BaseModel):
+    tg_user_id: int
+    booking_id: int
+
+
+class CancelBookingResponse(BaseModel):
     booking_id: int
     status: str
-    expires_at: str | None
-
-    unit_id: int
-    tariff_id: int
-
-    total_amount: int
-    prepay_amount: int
-
-    payment_profile: PaymentProfileOut
+    cancelled_at: str | None = None
+    message: str
 
 
-class ActiveBookingsRequest(BaseModel):
-    tg_user_id: int = Field(..., ge=1)
+class UserBookingActionRequest(BaseModel):
+    tg_user_id: int
+    booking_id: int
+
+
+class BookingActionResponse(BaseModel):
+    booking_id: int
+    status: str
+    expires_at: str | None = None
+    message: str
+
+
+class AdminBookingsListRequest(BaseModel):
+    status_group: str
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class AdminWebappListRequest(BaseModel):
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class AdminWebappCancelRequest(BaseModel):
+    booking_id: int
+
+
+class AdminBookingActionRequest(BaseModel):
+    booking_id: int
+    admin_tg_user_id: int
 
 
 class AdminBookingItem(BaseModel):
@@ -154,87 +235,12 @@ class AdminBookingItem(BaseModel):
 
     can_confirm: bool
     can_reject: bool
+    can_cancel: bool
 
 
 class AdminBookingsListResponse(BaseModel):
     items: list[AdminBookingItem]
     count: int
-
-
-class CancelBookingRequest(BaseModel):
-    tg_user_id: int = Field(..., ge=1)
-    booking_id: int = Field(..., ge=1)
-
-
-class CancelBookingResponse(BaseModel):
-    booking_id: int
-    status: str
-    cancelled_at: str | None
-    message: str
-
-
-class UserBookingActionRequest(BaseModel):
-    tg_user_id: int = Field(..., ge=1)
-    booking_id: int = Field(..., ge=1)
-
-
-class AdminBookingActionRequest(BaseModel):
-    booking_id: int = Field(..., ge=1)
-    admin_tg_user_id: int | None = Field(default=None, ge=1)
-
-
-class AdminBookingsListRequest(BaseModel):
-    status_group: str = Field(..., pattern="^(awaiting_payment|awaiting_review|confirmed|closed)$")
-    limit: int = Field(default=20, ge=1, le=100)
-
-
-class AdminBookingItem(BaseModel):
-    booking_id: int
-    status: str
-
-    tg_user_id: int
-    phone: str
-    telegram_name: str | None = None
-    telegram_username: str | None = None
-
-    unit_id: int
-    unit_title: str
-
-    tariff_id: int
-    tariff_title: str
-
-    adults: int
-    children: int
-    total_guests: int
-    extra_bed_count: int
-
-    check_in: str
-    check_out: str
-    nights: int
-
-    total_amount: int
-    prepay_amount: int
-
-    created_at: str
-    paid_clicked_at: str | None = None
-    receipt_received_at: str | None = None
-    confirmed_at: str | None = None
-    cancelled_at: str | None = None
-    expired_at: str | None = None
-
-    can_confirm: bool
-    can_reject: bool
-
-
-class AdminBookingsListResponse(BaseModel):
-    items: list[AdminBookingItem]
-
-
-class BookingActionResponse(BaseModel):
-    booking_id: int
-    status: str
-    expires_at: str | None = None
-    message: str
 
 
 class ReaperRunResponse(BaseModel):

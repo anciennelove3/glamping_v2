@@ -1,0 +1,1424 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Бронирование — Тишь да Гладь</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://npmcdn.com/flatpickr/dist/l10n/ru.js"></script>
+
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #111827;
+      --muted: #94a3b8;
+      --text: #f8fafc;
+      --line: #1f2937;
+      --accent: #22c55e;
+      --danger: #ef4444;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0b1220;
+      color: var(--text);
+    }
+
+    .wrap {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    h1 {
+      margin: 0 0 16px;
+      font-size: 28px;
+    }
+
+    h2 {
+      margin-top: 0;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      display: block;
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    select, input, button {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      padding: 12px;
+      font-size: 16px;
+    }
+
+    select, input {
+      background: #0b1220;
+      color: var(--text);
+      -webkit-text-fill-color: var(--text);
+    }
+
+    button {
+      background: var(--accent);
+      color: #062b14;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+    }
+
+    button.secondary {
+      background: #1f2937;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .units {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .unit {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      background: #0b1220;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .unit.active {
+      outline: 2px solid var(--accent);
+    }
+
+    .unit img {
+      width: 100%;
+      height: 220px;
+      object-fit: cover;
+      display: block;
+      background: #111827;
+    }
+
+    .unit-body {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .unit-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .error {
+      color: #fecaca;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      padding: 12px;
+      border-radius: 12px;
+      display: none;
+      margin-bottom: 12px;
+      white-space: pre-line;
+    }
+
+    .summary {
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    .summary strong {
+      color: #fff;
+    }
+
+    .loading-note {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .flatpickr-calendar {
+      background: #0b1220;
+      border: 1px solid var(--line);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      color: #f8fafc;
+    }
+
+    .flatpickr-months {
+      padding: 8px 8px 0;
+    }
+
+    .flatpickr-months .flatpickr-month {
+      height: 42px;
+      color: #f8fafc;
+      fill: #f8fafc;
+    }
+
+    .flatpickr-current-month {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 42px;
+      height: 42px;
+      font-size: 16px;
+    }
+
+    .flatpickr-current-month .cur-month {
+      color: #f8fafc;
+      font-weight: 700;
+      font-size: 16px;
+    }
+
+    .flatpickr-current-month input.cur-year {
+      background: transparent;
+      color: #f8fafc;
+      border: none;
+      font-size: 16px;
+      font-weight: 700;
+      width: 58px;
+      height: 28px;
+      padding: 0;
+      box-shadow: none;
+      -webkit-text-fill-color: #f8fafc;
+    }
+
+    .flatpickr-current-month input.cur-year:focus {
+      outline: none;
+    }
+
+    .flatpickr-current-month .numInputWrapper {
+      width: 58px;
+    }
+
+    .flatpickr-current-month .numInputWrapper span.arrowUp,
+    .flatpickr-current-month .numInputWrapper span.arrowDown {
+      border-left: 1px solid #334155;
+    }
+
+    .flatpickr-current-month .numInputWrapper span.arrowUp:after {
+      border-bottom-color: #f8fafc;
+    }
+
+    .flatpickr-current-month .numInputWrapper span.arrowDown:after {
+      border-top-color: #f8fafc;
+    }
+
+    .flatpickr-months .flatpickr-prev-month,
+    .flatpickr-months .flatpickr-next-month {
+      top: 10px;
+      padding: 8px;
+      color: #f8fafc;
+    }
+
+    .flatpickr-months .flatpickr-prev-month svg,
+    .flatpickr-months .flatpickr-next-month svg {
+      width: 14px;
+      height: 14px;
+      fill: #f8fafc;
+      stroke: #f8fafc;
+    }
+
+    .flatpickr-weekdays {
+      background: transparent;
+    }
+
+    span.flatpickr-weekday {
+      color: #cbd5e1;
+      font-weight: 600;
+    }
+
+    .flatpickr-day {
+      border-radius: 10px;
+      color: #f8fafc;
+    }
+
+    .flatpickr-day.today {
+      border-color: #475569;
+    }
+
+    .flatpickr-day.selected,
+    .flatpickr-day.startRange,
+    .flatpickr-day.endRange {
+      background: #22c55e;
+      border-color: #22c55e;
+      color: #062b14;
+    }
+
+    .flatpickr-day.inRange {
+      background: rgba(34, 197, 94, 0.15);
+      border-color: transparent;
+      box-shadow: none;
+    }
+
+    .flatpickr-day.disabled,
+    .flatpickr-day.flatpickr-disabled,
+    .flatpickr-day.prevMonthDay,
+    .flatpickr-day.nextMonthDay {
+      color: #475569 !important;
+      cursor: not-allowed;
+    }
+
+    .flatpickr-day:hover:not(.flatpickr-disabled):not(.disabled) {
+      background: #172033;
+      border-color: #334155;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.82);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 9999;
+    }
+
+    .modal-overlay.open {
+      display: flex;
+    }
+
+    .modal {
+      width: min(980px, 100%);
+      max-height: calc(100vh - 32px);
+      overflow: auto;
+      background: #0f172a;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+    }
+
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .modal-close {
+      width: auto;
+      padding: 10px 14px;
+    }
+
+    .modal-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 18px;
+    }
+
+    .gallery-main {
+      position: relative;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: #0b1220;
+    }
+
+    .gallery-main img {
+      width: 100%;
+      height: 420px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .gallery-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: auto;
+      min-width: 44px;
+      padding: 10px 12px;
+      background: rgba(15, 23, 42, 0.72);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+
+    .gallery-prev { left: 10px; }
+    .gallery-next { right: 10px; }
+
+    .thumbs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .thumb {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      padding: 0;
+      background: #0b1220;
+    }
+
+    .thumb.active {
+      outline: 2px solid var(--accent);
+    }
+
+    .thumb img {
+      width: 100%;
+      height: 80px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .detail-box {
+      background: #111827;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+
+    .detail-box h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    .feature-list {
+      margin: 0;
+      padding-left: 18px;
+      line-height: 1.6;
+    }
+
+    .detail-meta {
+      display: grid;
+      gap: 8px;
+      font-size: 15px;
+    }
+
+    @media (max-width: 900px) {
+      .modal-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .grid,
+      .units,
+      .unit-actions {
+        grid-template-columns: 1fr;
+      }
+
+      .gallery-main img {
+        height: 280px;
+      }
+
+      .thumbs {
+        grid-template-columns: repeat(3, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Бронирование</h1>
+
+    <div style="margin:12px 0;padding:12px;background:#fff;color:#000;border-radius:12px;">
+      <div style="font-weight:700;">BUILD 20260401-3</div>
+      <div style="margin-top:8px;">WEBP test:</div>
+      <img src="/webapp/booking/media/triangle/thumbs/01.webp?v=20260401-3" style="width:220px;display:block;margin:8px 0;" alt="webp test">
+
+      <div>JPG test:</div>
+      <img src="/webapp/booking/media/triangle/01.jpg?v=20260401-3" style="width:220px;display:block;margin:8px 0;" alt="jpg test">
+    </div>
+
+    <div id="errorBox" class="error"></div>
+
+    <div class="card">
+      <h2>1. Выберите домик</h2>
+      <div id="unitsBox" class="units"></div>
+    </div>
+
+    <div class="card">
+      <h2>2. Параметры бронирования</h2>
+
+      <div class="grid">
+        <div class="full">
+          <label for="tariff">Тариф</label>
+          <select id="tariff"></select>
+        </div>
+
+        <div>
+          <label for="adults">Взрослые</label>
+          <select id="adults"></select>
+        </div>
+
+        <div id="childrenBlock">
+          <label for="children">Дети</label>
+          <select id="children"></select>
+        </div>
+
+        <div id="extraBedBlock">
+          <label for="extraBed">Доп. места для детей</label>
+          <select id="extraBed"></select>
+        </div>
+
+        <div>
+          <label for="checkIn">Заезд</label>
+          <input id="checkIn" type="text" placeholder="YYYY-MM-DD" readonly>
+          <div id="checkInMeta" class="muted" style="margin-top:6px;">Время заезда: —</div>
+        </div>
+
+        <div>
+          <label for="checkOut">Выезд</label>
+          <input id="checkOut" type="text" placeholder="YYYY-MM-DD" readonly>
+          <div id="checkOutMeta" class="muted" style="margin-top:6px;">Время выезда: —</div>
+        </div>
+      </div>
+
+      <div id="calendarHint" class="loading-note">Подготовка календаря…</div>
+
+      <div style="display:flex; gap:12px; margin-top:16px;">
+        <button id="calcBtn">Рассчитать стоимость</button>
+        <button id="sendBtn" class="secondary" disabled>Продолжить в Telegram</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3. Итог</h2>
+      <div id="summary" class="summary">Заполните параметры и нажмите «Рассчитать стоимость».</div>
+    </div>
+
+    <div class="card">
+      <h2>4. Условия бронирования</h2>
+      <div id="bookingTerms" class="summary"></div>
+    </div>
+  </div>
+
+  <div id="unitModal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 id="modalTitle" style="margin:0;">О домике</h2>
+        <button id="modalCloseBtn" class="secondary modal-close" type="button">Закрыть</button>
+      </div>
+
+      <div class="modal-grid">
+        <div>
+          <div class="gallery-main">
+            <img id="modalMainImage" src="" alt="" decoding="async">
+            <button id="galleryPrev" class="gallery-nav gallery-prev secondary" type="button">‹</button>
+            <button id="galleryNext" class="gallery-nav gallery-next secondary" type="button">›</button>
+          </div>
+          <div id="modalThumbs" class="thumbs"></div>
+        </div>
+
+        <div>
+          <div class="detail-box">
+            <h3>О домике</h3>
+            <div id="modalDescription" class="muted" style="line-height:1.7;"></div>
+          </div>
+
+          <div class="detail-box">
+            <h3>Что внутри</h3>
+            <ul id="modalFeatures" class="feature-list"></ul>
+          </div>
+
+          <div id="includedBox" class="detail-box" style="display:none;">
+            <h3>В стоимость входит</h3>
+            <ul id="modalIncluded" class="feature-list"></ul>
+          </div>
+
+          <div id="equipmentBox" class="detail-box" style="display:none;">
+            <h3>Дом оборудован</h3>
+            <ul id="modalEquipment" class="feature-list"></ul>
+          </div>
+
+          <div id="territoryBox" class="detail-box" style="display:none;">
+            <h3>На территории</h3>
+            <ul id="modalTerritory" class="feature-list"></ul>
+          </div>
+
+          <div class="detail-box">
+            <h3>Основная информация</h3>
+            <div id="modalMeta" class="detail-meta"></div>
+          </div>
+
+          <button id="modalSelectBtn" type="button">Выбрать этот домик</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+    }
+
+    if (window.flatpickr?.l10ns?.ru) {
+      flatpickr.localize(flatpickr.l10ns.ru);
+    }
+
+    const $ = (id) => document.getElementById(id);
+
+    const ASSET_VERSION = "20260401-2";
+    const MEDIA_BASE = "/webapp/booking/media";
+    const TRI_MAIN = `${MEDIA_BASE}/triangle/main`;
+    const TRI_THUMBS = `${MEDIA_BASE}/triangle/thumbs`;
+    const SKV_MAIN = `${MEDIA_BASE}/skvorechnik/main`;
+    const SKV_THUMBS = `${MEDIA_BASE}/skvorechnik/thumbs`;
+
+    const BOOKING_TERMS_HTML = `
+      <div><strong>Предоплата:</strong> 50% от общей суммы от общего чека.</div>
+      <div><strong>Важно:</strong> после внесения предоплаты количество взрослых гостей дополнить будет нельзя.</div>
+      <div><strong>Бесплатная отмена / перенос:</strong> за 7 дней до заезда.</div>
+      <div><strong>Вторая часть суммы:</strong> вносится за сутки до заезда безналично или при подписании договора наличными.</div>
+      <div><strong>Депозит:</strong> 5 000 ₽, вносится в день заселения.</div>
+      <div><strong>Возврат депозита:</strong> до 20:00 после выселения при условии отсутствия повреждений имущества.</div>
+      <div><strong>Удержание депозита:</strong> производится при повреждении имущества. Сумма удержания равна стоимости покрытия ущерба.</div>
+    `;
+
+    const UNIT_META = {
+      1: {
+        title: 'Дом "Треугольный"',
+        check_in_time: "15:00",
+        check_out_time: "12:00",
+        max_adults: 2,
+        max_children: 3,
+        max_total_guests: 5,
+        child_policy: "Дети до 7 лет — бесплатно, старше 7 лет — доплата 1000 ₽."
+      },
+      2: {
+        title: 'Мини-дом "Скворечник"',
+        check_in_time: "15:30",
+        check_out_time: "12:30",
+        max_adults: 2,
+        max_children: 0,
+        max_total_guests: 2,
+        child_policy: ""
+      }
+    };
+
+    const UNIT_DETAILS = {
+      1: {
+        preview: `${TRI_THUMBS}/01.webp?v=${ASSET_VERSION}`,
+        description: 'Дом "Треугольный" — просторный вариант для спокойного семейного отдыха.',
+        features: [
+          "До 2 взрослых",
+          "До 3 детей",
+          "Дети до 7 лет — бесплатно",
+          "Дети старше 7 лет — доплата 1000 ₽",
+          "Уютное пространство для семейного отдыха"
+        ],
+        included: [
+          "Аренда дома",
+          "Постельное бельё и полотенца",
+          "Базовые принадлежности для комфортного отдыха",
+          "Доступ к территории и инфраструктуре"
+        ],
+        equipment: [
+          "Спальные места для семьи",
+          "Санузел",
+          "Кухонная зона",
+          "Холодильник",
+          "Чайник",
+          "Посуда",
+          "Отопление / тёплый пол"
+        ],
+        territory: [
+          "Парковка",
+          "Зона отдыха",
+          "Мангальная зона",
+          "Wi-Fi"
+        ],
+        photos: [
+          { full: `${TRI_MAIN}/01.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/01.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/02.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/02.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/03.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/03.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/04.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/04.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/05.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/05.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/06.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/06.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/07.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/07.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/08.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/08.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/09.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/09.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/10.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/10.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/11.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/11.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/12.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/12.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/13.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/13.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/14.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/14.webp?v=${ASSET_VERSION}` },
+          { full: `${TRI_MAIN}/15.webp?v=${ASSET_VERSION}`, thumb: `${TRI_THUMBS}/15.webp?v=${ASSET_VERSION}` }
+        ]
+      },
+      2: {
+        preview: `${SKV_THUMBS}/01.webp?v=${ASSET_VERSION}`,
+        description: 'Мини-дом "Скворечник" — компактное и уютное пространство для отдыха вдвоём.',
+        features: [
+          "Только для 2 взрослых",
+          "Размещение с детьми не предусмотрено",
+          "Уютный формат для спокойного отдыха"
+        ],
+        included: [
+          "Аренда дома (баня, чан — в зависимости от выбранного пакета)",
+          "Постельное бельё, полотенца (по 2 каждому гостю)",
+          "Халаты, тапочки",
+          "Веник, масла и простыни для бани",
+          "Шампунь / кондиционер, гель для душа, зубные щётки / паста",
+          "Мангальная зона (уголь, розжиг, решётка, шампура)",
+          "Аптечка",
+          "Туалетная бумага, салфетки, мешки для мусора",
+          "Ватные палочки, диски, крем для рук",
+          "Продукты: молотый кофе, чай, сливки, сахар, соль, специи, растительное масло"
+        ],
+        equipment: [
+          "Телевизор",
+          "Индукционная плита",
+          "Холодильник",
+          "Чайник, кофеварка",
+          "СВЧ",
+          "Камин на дровах",
+          "Тёплый пол",
+          "Кондиционер",
+          "Вся необходимая посуда для приготовления пищи и сервировки стола",
+          "Фен",
+          "Яндекс Станция",
+          "Проектор (подписка Иви, КиноПоиск, VK Видео) — 500 ₽/сутки"
+        ],
+        territory: [
+          "Банный чан",
+          "Баня",
+          "Мангал",
+          "Пергола (зона отдыха на террасе дома)",
+          "Качель / батут / шезлонги",
+          "Стоянка (закрытая территория)",
+          "Wi-Fi",
+          "Видеонаблюдение"
+        ],
+        photos: [
+          { full: `${SKV_MAIN}/01.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/01.webp?v=${ASSET_VERSION}` },
+          { full: `${SKV_MAIN}/02.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/02.webp?v=${ASSET_VERSION}` },
+          { full: `${SKV_MAIN}/03.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/03.webp?v=${ASSET_VERSION}` },
+          { full: `${SKV_MAIN}/04.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/04.webp?v=${ASSET_VERSION}` },
+          { full: `${SKV_MAIN}/05.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/05.webp?v=${ASSET_VERSION}` },
+          { full: `${SKV_MAIN}/06.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/06.webp?v=${ASSET_VERSION}` },
+          { full: `${SKV_MAIN}/07.webp?v=${ASSET_VERSION}`, thumb: `${SKV_THUMBS}/07.webp?v=${ASSET_VERSION}` }
+        ]
+      }
+    };
+
+    let units = [];
+    let tariffs = [];
+    let selectedUnitId = null;
+    let lastCalculation = null;
+
+    let unavailableRanges = [];
+    let disabledCheckInDates = [];
+
+    let checkInPicker = null;
+    let checkOutPicker = null;
+
+    let modalUnitId = null;
+    let modalImages = [];
+    let modalImageIndex = 0;
+
+    const MIN_LEAD_DAYS = 1;
+    const MIN_STAY_NIGHTS = 1;
+    const MAX_STAY_NIGHTS = 30;
+    const UNAVAILABLE_LOOKAHEAD_DAYS = 365;
+
+    function showError(message = "") {
+      const box = $("errorBox");
+      if (!message) {
+        box.style.display = "none";
+        box.textContent = "";
+        return;
+      }
+      box.style.display = "block";
+      box.textContent = message;
+    }
+
+    async function api(path, options = {}) {
+      const res = await fetch(path, options);
+      const text = await res.text();
+      let data = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { detail: text };
+      }
+      if (!res.ok) {
+        throw new Error(data.detail || text || `HTTP ${res.status}`);
+      }
+      return data;
+    }
+
+    function fillSelect(el, values, selected = null) {
+      el.innerHTML = "";
+      values.forEach((v) => {
+        const opt = document.createElement("option");
+        opt.value = String(v.value);
+        opt.textContent = v.label;
+        el.appendChild(opt);
+      });
+      if (selected != null) el.value = String(selected);
+    }
+
+    function formatDateLocal(dt) {
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, "0");
+      const d = String(dt.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function parseISODate(iso) {
+      return new Date(iso + "T00:00:00");
+    }
+
+    function todayLocalISO() {
+      return formatDateLocal(new Date());
+    }
+
+    function addDays(isoDate, days) {
+      const dt = parseISODate(isoDate);
+      dt.setDate(dt.getDate() + days);
+      return formatDateLocal(dt);
+    }
+
+    function enrichUnit(unit) {
+      const meta = UNIT_META[unit.id];
+      if (!meta) return unit;
+
+      return {
+        ...unit,
+        title: meta.title,
+        check_in_time: meta.check_in_time,
+        check_out_time: meta.check_out_time,
+        max_adults: meta.max_adults,
+        max_children: meta.max_children,
+        max_total_guests: meta.max_total_guests,
+        child_policy: meta.child_policy || ""
+      };
+    }
+
+    function getSelectedUnit() {
+      return units.find(u => u.id === selectedUnitId) || null;
+    }
+
+    function getMaxChildren(unit) {
+      return Number(unit?.max_children ?? 0);
+    }
+
+    function hasChildren(unit) {
+      return getMaxChildren(unit) > 0;
+    }
+
+    function renderCapacityText(unit) {
+      const parts = [
+        `Макс. гостей: ${unit.max_total_guests}`,
+        `Взрослых: до ${unit.max_adults}`
+      ];
+
+      if (hasChildren(unit)) {
+        parts.push(`Детей: до ${unit.max_children}`);
+      }
+
+      return parts.join(" • ");
+    }
+
+    function selectUnit(unitId) {
+      if (selectedUnitId === unitId) return;
+      selectedUnitId = unitId;
+      renderUnits();
+      updateGuestControls();
+      updateStayTimeNotes();
+      resetCalculationState("Домик выбран. Обновляем доступные даты…");
+      refreshUnavailableAndCalendars();
+    }
+
+    function updateStayTimeNotes() {
+      const unit = getSelectedUnit();
+
+      $("checkInMeta").textContent = unit?.check_in_time
+        ? `Время заезда: с ${unit.check_in_time}`
+        : "Время заезда: —";
+
+      $("checkOutMeta").textContent = unit?.check_out_time
+        ? `Время выезда: до ${unit.check_out_time}`
+        : "Время выезда: —";
+    }
+
+    function renderUnits() {
+      const box = $("unitsBox");
+      box.innerHTML = "";
+
+      units.forEach((unit) => {
+        const detail = UNIT_DETAILS[unit.id] || {};
+        const preview = detail.preview || ("https://placehold.co/800x500?text=" + encodeURIComponent(unit.title));
+        const childPolicyHtml = unit.child_policy ? `<div class="muted">${unit.child_policy}</div>` : "";
+
+        const div = document.createElement("div");
+        div.className = "unit" + (unit.id === selectedUnitId ? " active" : "");
+        div.innerHTML = `
+          <img src="${preview}" alt="${unit.title}" loading="lazy" decoding="async">
+          <div class="unit-body">
+            <h3 style="margin:0 0 4px">${unit.title}</h3>
+            <div class="muted">${unit.short_description || ""}</div>
+            <div class="muted">${renderCapacityText(unit)}</div>
+            <div class="muted">
+              Заезд: с ${unit.check_in_time || "—"} • Выезд: до ${unit.check_out_time || "—"}
+            </div>
+            ${childPolicyHtml}
+            <div class="unit-actions">
+              <button type="button" class="select-unit-btn">${unit.id === selectedUnitId ? "Выбрано" : "Выбрать"}</button>
+              <button type="button" class="secondary details-unit-btn">Подробнее</button>
+            </div>
+          </div>
+        `;
+
+        div.querySelector(".select-unit-btn").addEventListener("click", (e) => {
+          e.stopPropagation();
+          selectUnit(unit.id);
+        });
+
+        div.querySelector(".details-unit-btn").addEventListener("click", (e) => {
+          e.stopPropagation();
+          openUnitModal(unit.id);
+        });
+
+        div.addEventListener("click", () => {
+          selectUnit(unit.id);
+        });
+
+        box.appendChild(div);
+      });
+    }
+
+    function updateGuestControls() {
+      const unit = getSelectedUnit();
+      if (!unit) return;
+
+      const adultsValues = [];
+      for (let i = 1; i <= unit.max_adults; i++) {
+        adultsValues.push({ value: i, label: String(i) });
+      }
+      fillSelect($("adults"), adultsValues, adultsValues[0]?.value || 1);
+
+      const maxChildren = getMaxChildren(unit);
+      const childrenValues = [];
+      for (let i = 0; i <= maxChildren; i++) {
+        childrenValues.push({ value: i, label: String(i) });
+      }
+      fillSelect($("children"), childrenValues, 0);
+
+      const canHaveChildren = hasChildren(unit);
+      $("childrenBlock").style.display = canHaveChildren ? "" : "none";
+      $("extraBedBlock").style.display = canHaveChildren ? "" : "none";
+
+      if (!canHaveChildren) {
+        fillSelect($("children"), [{ value: 0, label: "0" }], 0);
+        fillSelect($("extraBed"), [{ value: 0, label: "0" }], 0);
+      } else {
+        updateExtraBedControls();
+      }
+    }
+
+    function updateExtraBedControls() {
+      const children = Number($("children").value || 0);
+      const values = [];
+      for (let i = 0; i <= children; i++) {
+        values.push({ value: i, label: String(i) });
+      }
+      fillSelect($("extraBed"), values, 0);
+    }
+
+    function resetCalculationState(summaryText) {
+      lastCalculation = null;
+      $("sendBtn").disabled = true;
+      $("summary").textContent = summaryText || "Заполните параметры и нажмите «Рассчитать стоимость».";
+    }
+
+    function renderList(boxId, listId, items = []) {
+      const box = $(boxId);
+      const list = $(listId);
+
+      list.innerHTML = "";
+
+      if (!items || !items.length) {
+        box.style.display = "none";
+        return;
+      }
+
+      items.forEach((item) => {
+        const li = document.createElement("li");
+        li.textContent = item;
+        list.appendChild(li);
+      });
+
+      box.style.display = "";
+    }
+
+    async function loadInitialData() {
+      showError("");
+      $("bookingTerms").innerHTML = BOOKING_TERMS_HTML;
+
+      units = (await api("/api/v2/units")).map(enrichUnit);
+      tariffs = await api("/api/v2/tariffs");
+
+      if (!units.length) throw new Error("Нет доступных домиков.");
+      if (!tariffs.length) throw new Error("Нет доступных тарифов.");
+
+      selectedUnitId = units[0].id;
+      renderUnits();
+
+      fillSelect(
+        $("tariff"),
+        tariffs.map(t => ({ value: t.id, label: t.title })),
+        tariffs[0].id
+      );
+
+      updateGuestControls();
+      updateStayTimeNotes();
+      resetCalculationState("Домик выбран. Обновляем доступные даты…");
+      await refreshUnavailableAndCalendars();
+    }
+
+    function buildPayload() {
+      if (!selectedUnitId) throw new Error("Сначала выберите домик.");
+      if (!$("checkIn").value) throw new Error("Выберите дату заезда.");
+      if (!$("checkOut").value) throw new Error("Выберите дату выезда.");
+
+      return {
+        unit_id: selectedUnitId,
+        tariff_id: Number($("tariff").value),
+        adults: Number($("adults").value),
+        children: Number($("children").value || 0),
+        extra_bed_count: Number($("extraBed").value || 0),
+        check_in: $("checkIn").value,
+        check_out: $("checkOut").value,
+      };
+    }
+
+    function renderSummary(data) {
+      const unit = getSelectedUnit();
+      const unitTitle = unit?.title || data.unit_title;
+      const checkInTime = unit?.check_in_time ? ` с ${unit.check_in_time}` : "";
+      const checkOutTime = unit?.check_out_time ? ` до ${unit.check_out_time}` : "";
+      const canHaveChildren = hasChildren(unit);
+
+      let html = `
+        <div><strong>Домик:</strong> ${unitTitle}</div>
+        <div><strong>Тариф:</strong> ${data.tariff_title}</div>
+        <div><strong>Взрослые:</strong> ${data.adults}</div>
+      `;
+
+      if (canHaveChildren) {
+        html += `<div><strong>Дети:</strong> ${data.children}</div>`;
+        html += `<div><strong>Доп. места:</strong> ${data.extra_bed_count} (${data.extra_bed_amount} ₽)</div>`;
+      }
+
+      html += `
+        <div><strong>Заезд:</strong> ${data.check_in}${checkInTime}</div>
+        <div><strong>Выезд:</strong> ${data.check_out}${checkOutTime}</div>
+        <div><strong>Ночей:</strong> ${data.nights}</div>
+        <div><strong>Стоимость проживания:</strong> ${data.subtotal_amount} ₽</div>
+        <div><strong>Итого:</strong> ${data.total_amount} ₽</div>
+        <div><strong>Предоплата:</strong> ${data.prepay_amount} ₽</div>
+      `;
+
+      if (unit?.child_policy) {
+        html += `<div><strong>Важно:</strong> ${unit.child_policy}</div>`;
+      }
+
+      $("summary").innerHTML = html;
+    }
+
+    function expandUnavailableDates(items) {
+      const out = [];
+      for (const item of items) {
+        let cur = parseISODate(item.check_in);
+        const end = parseISODate(item.check_out);
+        while (cur < end) {
+          out.push(formatDateLocal(cur));
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+      return out;
+    }
+
+    function findNextBlockedStart(checkInISO) {
+      for (const item of unavailableRanges) {
+        if (item.check_in > checkInISO) {
+          return item.check_in;
+        }
+      }
+      return null;
+    }
+
+    async function fetchUnavailableRanges() {
+      const start = addDays(todayLocalISO(), MIN_LEAD_DAYS);
+      const end = addDays(start, UNAVAILABLE_LOOKAHEAD_DAYS);
+
+      const data = await api("/api/v2/bookings/unavailable", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          unit_id: selectedUnitId,
+          date_from: start,
+          date_to: end,
+        }),
+      });
+
+      unavailableRanges = Array.isArray(data.items) ? data.items.slice() : [];
+      unavailableRanges.sort((a, b) => a.check_in.localeCompare(b.check_in));
+      disabledCheckInDates = expandUnavailableDates(unavailableRanges);
+    }
+
+    function destroyPickers() {
+      if (checkInPicker) {
+        checkInPicker.destroy();
+        checkInPicker = null;
+      }
+      if (checkOutPicker) {
+        checkOutPicker.destroy();
+        checkOutPicker = null;
+      }
+    }
+
+    function updateCheckoutConstraints(checkInISO, forceReset = false) {
+      if (!checkOutPicker || !checkInISO) return;
+
+      const horizonMaxDate = addDays(todayLocalISO(), UNAVAILABLE_LOOKAHEAD_DAYS);
+      const minCheckout = addDays(checkInISO, MIN_STAY_NIGHTS);
+      const maxByStay = addDays(checkInISO, MAX_STAY_NIGHTS);
+      const nextBlockedStart = findNextBlockedStart(checkInISO);
+
+      checkOutPicker.set("minDate", minCheckout);
+      checkOutPicker.set("maxDate", horizonMaxDate);
+
+      checkOutPicker.set("disable", [
+        function(date) {
+          const iso = formatDateLocal(date);
+
+          if (iso < minCheckout) return true;
+          if (iso > maxByStay) return true;
+          if (nextBlockedStart && iso > nextBlockedStart) return true;
+
+          return false;
+        }
+      ]);
+
+      const currentCheckOut = $("checkOut").value;
+      const invalidCurrent =
+        !currentCheckOut ||
+        currentCheckOut < minCheckout ||
+        currentCheckOut > maxByStay ||
+        (nextBlockedStart && currentCheckOut > nextBlockedStart);
+
+      if (forceReset || invalidCurrent) {
+        checkOutPicker.setDate(minCheckout, true);
+      }
+    }
+
+    function setupCalendars() {
+      destroyPickers();
+
+      const tomorrow = addDays(todayLocalISO(), MIN_LEAD_DAYS);
+      const defaultCheckIn = tomorrow;
+      const defaultCheckOut = addDays(defaultCheckIn, MIN_STAY_NIGHTS);
+      const horizonMaxDate = addDays(todayLocalISO(), UNAVAILABLE_LOOKAHEAD_DAYS);
+
+      $("checkIn").value = defaultCheckIn;
+      $("checkOut").value = defaultCheckOut;
+
+      checkInPicker = flatpickr("#checkIn", {
+        locale: "ru",
+        dateFormat: "Y-m-d",
+        monthSelectorType: "static",
+        prevArrow: "<svg viewBox='0 0 24 24'><path d='M15.5 19l-7-7 7-7'/></svg>",
+        nextArrow: "<svg viewBox='0 0 24 24'><path d='M8.5 5l7 7-7 7'/></svg>",
+        minDate: tomorrow,
+        maxDate: horizonMaxDate,
+        disableMobile: true,
+        defaultDate: defaultCheckIn,
+        disable: disabledCheckInDates,
+        onChange: function(_, dateStr) {
+          resetCalculationState("Дата заезда изменена. Пересчитайте стоимость.");
+          if (!dateStr) {
+            $("checkOut").value = "";
+            return;
+          }
+          updateCheckoutConstraints(dateStr, true);
+        }
+      });
+
+      checkOutPicker = flatpickr("#checkOut", {
+        locale: "ru",
+        dateFormat: "Y-m-d",
+        monthSelectorType: "static",
+        prevArrow: "<svg viewBox='0 0 24 24'><path d='M15.5 19l-7-7 7-7'/></svg>",
+        nextArrow: "<svg viewBox='0 0 24 24'><path d='M8.5 5l7 7-7 7'/></svg>",
+        minDate: defaultCheckOut,
+        maxDate: horizonMaxDate,
+        disableMobile: true,
+        defaultDate: defaultCheckOut,
+        disable: [],
+        onChange: function() {
+          resetCalculationState("Дата выезда изменена. Пересчитайте стоимость.");
+        }
+      });
+
+      updateCheckoutConstraints(defaultCheckIn, true);
+
+      $("calendarHint").textContent = unavailableRanges.length
+        ? "Занятые даты уже скрыты из выбора."
+        : "На выбранный период занятых дат не найдено.";
+    }
+
+    async function refreshUnavailableAndCalendars() {
+      try {
+        showError("");
+        $("calendarHint").textContent = "Загружаем занятые даты…";
+        await fetchUnavailableRanges();
+        setupCalendars();
+        updateStayTimeNotes();
+      } catch (e) {
+        showError(e.message || "Не удалось загрузить занятые даты.");
+        $("calendarHint").textContent = "Не удалось подготовить календарь.";
+      }
+    }
+
+    function openUnitModal(unitId) {
+      const unit = units.find(u => u.id === unitId);
+      const detail = UNIT_DETAILS[unitId] || {};
+      if (!unit) return;
+
+      modalUnitId = unitId;
+
+      if (detail.photos && detail.photos.length) {
+        modalImages = detail.photos;
+      } else {
+        const fallback = detail.preview || ("https://placehold.co/1200x800?text=" + encodeURIComponent(unit.title));
+        modalImages = [{ full: fallback, thumb: fallback }];
+      }
+
+      modalImageIndex = 0;
+
+      $("modalTitle").textContent = unit.title;
+      $("modalDescription").textContent =
+        detail.description || unit.full_description || unit.short_description || "Описание скоро появится.";
+
+      $("modalFeatures").innerHTML = "";
+      (detail.features || []).forEach((feature) => {
+        const li = document.createElement("li");
+        li.textContent = feature;
+        $("modalFeatures").appendChild(li);
+      });
+
+      renderList("includedBox", "modalIncluded", detail.included || []);
+      renderList("equipmentBox", "modalEquipment", detail.equipment || []);
+      renderList("territoryBox", "modalTerritory", detail.territory || []);
+
+      let metaHtml = `
+        <div>Заезд: <strong>с ${unit.check_in_time || "—"}</strong></div>
+        <div>Выезд: <strong>до ${unit.check_out_time || "—"}</strong></div>
+        <div>Взрослых: <strong>до ${unit.max_adults}</strong></div>
+      `;
+
+      if (hasChildren(unit)) {
+        metaHtml += `<div>Детей: <strong>до ${unit.max_children}</strong></div>`;
+      }
+
+      metaHtml += `<div>Всего гостей: <strong>до ${unit.max_total_guests}</strong></div>`;
+
+      if (unit.child_policy) {
+        metaHtml += `<div>Условия для детей: <strong>${unit.child_policy}</strong></div>`;
+      }
+
+      $("modalMeta").innerHTML = metaHtml;
+
+      renderModalImage();
+      renderModalThumbs();
+
+      $("galleryPrev").style.display = modalImages.length > 1 ? "" : "none";
+      $("galleryNext").style.display = modalImages.length > 1 ? "" : "none";
+
+      $("unitModal").classList.add("open");
+      document.body.style.overflow = "hidden";
+    }
+
+    function closeUnitModal() {
+      $("unitModal").classList.remove("open");
+      document.body.style.overflow = "";
+      modalUnitId = null;
+      modalImages = [];
+      modalImageIndex = 0;
+    }
+
+    function renderModalImage() {
+      const item = modalImages[modalImageIndex];
+      const src = item?.full || "";
+      $("modalMainImage").src = src;
+      $("modalMainImage").alt = $("modalTitle").textContent || "Фото домика";
+    }
+
+    function renderModalThumbs() {
+      const box = $("modalThumbs");
+      box.innerHTML = "";
+
+      modalImages.forEach((item, index) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "thumb" + (index === modalImageIndex ? " active" : "");
+        btn.innerHTML = `<img src="${item.thumb}" alt="Фото ${index + 1}" loading="lazy" decoding="async">`;
+
+        btn.addEventListener("click", () => {
+          modalImageIndex = index;
+          renderModalImage();
+          renderModalThumbs();
+        });
+
+        box.appendChild(btn);
+      });
+    }
+
+    function showPrevImage() {
+      if (!modalImages.length) return;
+      modalImageIndex = (modalImageIndex - 1 + modalImages.length) % modalImages.length;
+      renderModalImage();
+      renderModalThumbs();
+    }
+
+    function showNextImage() {
+      if (!modalImages.length) return;
+      modalImageIndex = (modalImageIndex + 1) % modalImages.length;
+      renderModalImage();
+      renderModalThumbs();
+    }
+
+    $("galleryPrev").addEventListener("click", showPrevImage);
+    $("galleryNext").addEventListener("click", showNextImage);
+
+    $("modalCloseBtn").addEventListener("click", closeUnitModal);
+    $("unitModal").addEventListener("click", (e) => {
+      if (e.target.id === "unitModal") closeUnitModal();
+    });
+
+    $("modalSelectBtn").addEventListener("click", () => {
+      if (modalUnitId != null) {
+        selectUnit(modalUnitId);
+        closeUnitModal();
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (!$("unitModal").classList.contains("open")) return;
+      if (e.key === "Escape") closeUnitModal();
+      if (e.key === "ArrowLeft") showPrevImage();
+      if (e.key === "ArrowRight") showNextImage();
+    });
+
+    $("children").addEventListener("change", () => {
+      updateExtraBedControls();
+      resetCalculationState("Изменено количество детей. Пересчитайте стоимость.");
+    });
+
+    $("adults").addEventListener("change", () => {
+      resetCalculationState("Изменено количество взрослых. Пересчитайте стоимость.");
+    });
+
+    $("extraBed").addEventListener("change", () => {
+      resetCalculationState("Изменены доп. места. Пересчитайте стоимость.");
+    });
+
+    $("tariff").addEventListener("change", () => {
+      resetCalculationState("Изменён тариф. Пересчитайте стоимость.");
+    });
+
+    $("calcBtn").addEventListener("click", async () => {
+      try {
+        showError("");
+        lastCalculation = null;
+        $("sendBtn").disabled = true;
+
+        const payload = buildPayload();
+        const data = await api("/api/v2/bookings/calculate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        lastCalculation = data;
+        renderSummary(data);
+        $("sendBtn").disabled = false;
+      } catch (e) {
+        showError(e.message || "Не удалось рассчитать стоимость.");
+      }
+    });
+
+    $("sendBtn").addEventListener("click", () => {
+      if (!lastCalculation) return;
+
+      const unit = getSelectedUnit();
+
+      const payload = {
+        type: "booking_calculated",
+        data: {
+          unit_id: lastCalculation.unit_id,
+          tariff_id: lastCalculation.tariff_id,
+          adults: lastCalculation.adults,
+          children: lastCalculation.children,
+          extra_bed_count: lastCalculation.extra_bed_count,
+          check_in: lastCalculation.check_in,
+          check_out: lastCalculation.check_out,
+          total_amount: lastCalculation.total_amount,
+          prepay_amount: lastCalculation.prepay_amount,
+          unit_title: unit?.title || lastCalculation.unit_title,
+          tariff_title: lastCalculation.tariff_title,
+        }
+      };
+
+      if (tg && tg.sendData) {
+        tg.sendData(JSON.stringify(payload));
+        return;
+      }
+
+      showError("Эту страницу нужно открывать из Telegram.");
+    });
+
+    loadInitialData().catch((e) => showError(e.message || "Ошибка загрузки данных."));
+  </script>
+</body>
+</html>
